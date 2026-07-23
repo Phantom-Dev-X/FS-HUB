@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore'; // Or './OrderStore'
 
 // =========================================================================
@@ -14,7 +15,7 @@ import { OrderStore } from './_OrderStore'; // Or './OrderStore'
 // and "➕ ADD TO SHOPRITE CART (₦240,000)" button that updates OrderStore and returns!
 // =========================================================================
 export default function ProductDetailScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const { id } = useLocalSearchParams(); // Reads ?id=PRD-101 from router!
 
   // Find the exact product from our warehouse catalog (fallback to PRD-101 if directly testing)
@@ -41,7 +42,7 @@ export default function ProductDetailScreen() {
     Alert.alert(
       '🛒 Added to Store Cart ✓',
       `${qty} units of ${product.name} (₦${(qty * product.price).toLocaleString()}) added to ${client.name}'s order!`,
-      [{ text: 'Continue Ordering', onPress: () => router.back() }]
+      [{ text: 'Continue Ordering', onPress: () => router.push('/visit') }]
     );
   };
 
@@ -51,7 +52,7 @@ export default function ProductDetailScreen() {
         
         {/* Back Button & Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.push('/visit')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Store Catalog</Text>
           </TouchableOpacity>
 

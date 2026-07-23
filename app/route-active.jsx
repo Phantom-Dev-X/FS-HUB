@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import SmartFooter from './SmartFooter';
+import { useTheme } from '../context/ThemeContext';
 import { RouteStore } from './RouteStore';
 
 let MapView = null;
@@ -19,7 +20,7 @@ if (Platform.OS !== 'web') {
 }
 
 export default function RouteActiveScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const repLoc = RouteStore.repLocation;
   const [activeStores, setActiveStores] = useState(RouteStore.getSelectedStores());
 
@@ -106,9 +107,6 @@ export default function RouteActiveScreen() {
             🚀 ACTIVE ROUTE MAP
           </Text>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         {/* 1. IN-APP INTERACTIVE ROUTE MAP */}
@@ -206,6 +204,7 @@ export default function RouteActiveScreen() {
 
       {/* FIXED SMART FOOTER */}
       <SmartFooter isDark={isDark} colors={{ card: colors.card, border: colors.border, cyan: colors.cyan, subText: colors.subText }} />
+import { useTheme } from '../context/ThemeContext';
     </SafeAreaView>
   );
 }

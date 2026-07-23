@@ -6,9 +6,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import SmartFooter from './SmartFooter';
+import { useTheme } from '../context/ThemeContext';
 
 export default function HistoryScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('All Time');
 
@@ -97,9 +98,6 @@ export default function HistoryScreen() {
             📜 FIELD HISTORIES & ARCHIVE
           </Text>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>
@@ -185,6 +183,7 @@ export default function HistoryScreen() {
 
       {/* FIXED SMART FOOTER */}
       <SmartFooter isDark={isDark} colors={{ card: colors.card, border: colors.border, cyan: colors.cyan, subText: colors.subText }} />
+import { useTheme } from '../context/ThemeContext';
     </SafeAreaView>
   );
 }

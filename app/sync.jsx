@@ -4,6 +4,7 @@ import {
   Alert, ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
 
 export default function SyncOrdersScreen() {
@@ -85,7 +86,7 @@ export default function SyncOrdersScreen() {
         
         {/* Top Header with Back Button */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
             <Text style={styles.backText}>⬅️ Back to Home Hub</Text>
           </TouchableOpacity>
           <Text style={styles.mainTitle}>OFFLINE ORDERS STORAGE 🔄</Text>

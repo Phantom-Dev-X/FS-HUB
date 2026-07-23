@@ -6,10 +6,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import SmartFooter from './SmartFooter';
+import { useTheme } from '../context/ThemeContext';
 import { RouteStore } from './RouteStore';
 
 export default function RouteSelectScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [clientList, setClientList] = useState(RouteStore.clients);
 
@@ -41,7 +42,7 @@ export default function RouteSelectScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.push('/route')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Territory Map</Text>
           </TouchableOpacity>
 
@@ -49,9 +50,6 @@ export default function RouteSelectScreen() {
             📋 SELECT CLIENT STOPS
           </Text>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>
@@ -113,6 +111,7 @@ export default function RouteSelectScreen() {
       </ScrollView>
 
       <SmartFooter isDark={isDark} colors={{ card: colors.card, border: colors.border, cyan: colors.cyan, subText: colors.subText }} />
+import { useTheme } from '../context/ThemeContext';
     </SafeAreaView>
   );
 }

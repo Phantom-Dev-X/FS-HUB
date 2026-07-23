@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 
@@ -32,7 +33,7 @@ export default function TerritoriesScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
         {/* Back Button & Header */}
-        <TouchableOpacity onPress={() => router.push('/dashboard')} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
           <Text style={styles.backText}>⬅️ Back to Home Hub</Text>
         </TouchableOpacity>
 

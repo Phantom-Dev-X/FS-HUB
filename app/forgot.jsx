@@ -4,11 +4,12 @@ import {
   TextInput, Alert, ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
 import { EmailService } from './_EmailService';
 
 export default function ForgotPasswordScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   
   // Look right right here: 2-Step OTP Reset Wizard state!
   const [step, setStep] = useState(1); // Step 1: Send OTP, Step 2: Verify & Reset
@@ -113,7 +114,7 @@ export default function ForgotPasswordScreen() {
         
         {/* Top Header Row */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.push('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Login</Text>
           </TouchableOpacity>
 
@@ -121,9 +122,6 @@ export default function ForgotPasswordScreen() {
             🔑 RESET PASSWORD
           </Text>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>

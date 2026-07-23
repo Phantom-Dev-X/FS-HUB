@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { EmailService } from './_EmailService';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
 
@@ -126,7 +127,7 @@ export default function AddClientScreen() {
     Alert.alert(
       '🎉 Client Registered & Pin Dropped!', 
       `${storeName} has been saved into your clean directory and dropped as a live pin on your territory map!\n\n📧 Automated Server Confirmation:\nOur cloud server (${EmailService.config.senderEmail}) has dispatched the official Welcome Onboarding Receipt straight to "${storeEmail.trim()}"!`,
-      [{ text: 'Return to Hub 🏠', onPress: () => router.back() }]
+      [{ text: 'Return to Hub 🏠', onPress: () => router.push('/home') }]
     );
   };
 
@@ -135,7 +136,7 @@ export default function AddClientScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
         {/* Back Button & Header */}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
           <Text style={styles.backText}>⬅️ Back to Home Hub</Text>
         </TouchableOpacity>
 

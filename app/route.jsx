@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import SmartFooter from './SmartFooter';
+import { useTheme } from '../context/ThemeContext';
 import { RouteStore } from './RouteStore';
 
 let MapView = null;
@@ -16,7 +17,7 @@ if (Platform.OS !== 'web') {
 }
 
 export default function RouteOverviewScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const repLoc = RouteStore.repLocation;
 
   // Look right right here: Persistent Route Safeguard!
@@ -68,7 +69,7 @@ export default function RouteOverviewScreen() {
       <SafeAreaView style={styles.floatingOverlay} pointerEvents="box-none">
         
         <View style={styles.topRow}>
-          <TouchableOpacity onPress={() => router.push('/dashboard')} style={styles.floatingBackBtn}>
+          <TouchableOpacity onPress={() => router.push('/home')} style={styles.floatingBackBtn}>
             <Text style={styles.floatingBackText}>⬅️ Hub</Text>
           </TouchableOpacity>
 
@@ -76,9 +77,6 @@ export default function RouteOverviewScreen() {
             <Text style={styles.headerTitleText} numberOfLines={1}>📍 TERRITORY RADAR</Text>
           </View>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={styles.floatingThemeBtn}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.floatingActionRow}>
@@ -97,6 +95,7 @@ export default function RouteOverviewScreen() {
       {/* FIXED SMART FOOTER */}
       <View style={styles.footerContainer}>
         <SmartFooter isDark={isDark} colors={{ card: isDark ? '#1E293B' : '#FFFFFF', border: isDark ? '#334155' : '#CBD5E1', cyan: '#38BDF8', subText: '#94A3B8' }} />
+import { useTheme } from '../context/ThemeContext';
       </View>
 
     </View>

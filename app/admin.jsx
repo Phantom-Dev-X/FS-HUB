@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 
 let MapView = null;
@@ -17,7 +18,7 @@ if (Platform.OS !== 'web') {
 }
 
 export default function AdminDashboardScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('ORDERS'); // 'ORDERS' | 'REPS' | 'CATALOG' | 'ADMINS'
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
 
@@ -258,7 +259,7 @@ export default function AdminDashboardScreen() {
       {/* Admin Header */}
       <View style={[styles.headerBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerTopRow}>
-          <TouchableOpacity onPress={() => router.replace('/dashboard')} style={styles.exitAdminBtn}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.exitAdminBtn}>
             <Text style={styles.exitAdminText}>⬅️ Rep Portal</Text>
           </TouchableOpacity>
 
@@ -266,9 +267,6 @@ export default function AdminDashboardScreen() {
             🏢 HEADQUARTERS ADMIN SUITE
           </Text>
 
-          <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { borderColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.headerMetaRow}>

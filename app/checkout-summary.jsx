@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 
 // Look right right here: We import our automated background email service!
 import { EmailService } from './_EmailService';
 
 export default function CheckoutSummaryScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const [cartItems, setCartItems] = useState(OrderStore.cart);
   
   const [orderNotes, setOrderNotes] = useState('');
@@ -108,7 +109,7 @@ export default function CheckoutSummaryScreen() {
           style: 'default',
           onPress: () => {
             OrderStore.cart = [];
-            router.push('/dashboard');
+            router.push('/home');
           }
         }
       ]

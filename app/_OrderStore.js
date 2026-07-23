@@ -6,6 +6,15 @@
 export const OrderStore = {
   repLocation: { latitude: 6.6018, longitude: 3.3515 },
   currentClient: null,
+  // Premium agent profile - shows in elegant home header
+  currentAgent: {
+    name: 'Tunde Balogun',
+    id: 'REP-2049',
+    role: 'Senior Field Officer',
+    territory: 'Ikeja Commercial Zone • Route #14',
+    avatar: null, // if null, show initials template
+    initials: 'TB',
+  },
 
   clients: [],
   cart: [],

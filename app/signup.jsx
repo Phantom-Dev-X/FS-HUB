@@ -1,16 +1,16 @@
+// SIGNUP WITH STRONG VALIDATION - Email regex + Password strength
 import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform 
-} from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { EmailService } from './_EmailService';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, colors } = useTheme();
   
   const [fullName, setFullName] = useState('');
   const [repId, setRepId] = useState('REP-2050');
@@ -18,38 +18,57 @@ export default function SignupScreen() {
   const [gmail, setGmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   const [isLoading, setIsLoading] = useState(false);
+  const [showPwd, setShowPwd] = useState(false);
 
-  const colors = {
-    background: isDark ? '#0F172A' : '#F4F6F9',
-    card:       isDark ? '#1E293B' : '#FFFFFF',
-    border:     isDark ? '#334155' : '#CBD5E1',
-    mainText:   isDark ? '#FFFFFF' : '#0F172A',
-    subText:    isDark ? '#94A3B8' : '#64748B',
-    cyan:       isDark ? '#38BDF8' : '#0284C7',
-    green:      isDark ? '#10B981' : '#059669',
+  const validateEmail = (email) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!email) return 'Email is required';
+    if (!emailRegex.test(email.trim())) return 'Invalid email. Must be like name@gmail.com';
+    return '';
   };
 
-  // Look right right here: Saves new officer straight into memory & disk so Admin sees them live!
+  const validatePassword = (pwd) => {
+    const checks = {
+      length: pwd.length >= 8,
+      uppercase: /[A-Z]/.test(pwd),
+      lowercase: /[a-z]/.test(pwd),
+      number: /[0-9]/.test(pwd),
+      special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+    };
+    const errors = [];
+    if (!checks.length) errors.push('At least 8 chars');
+    if (!checks.uppercase) errors.push('1 uppercase (A-Z)');
+    if (!checks.lowercase) errors.push('1 lowercase (a-z)');
+    if (!checks.number) errors.push('1 number (0-9)');
+    if (!checks.special) errors.push('1 special char (!@#$)');
+    return { valid: errors.length === 0, checks, errors, message: errors.join(', ') };
+  };
+
   const handleCompleteSignup = async () => {
     if (!fullName.trim() || !repId.trim() || !territory.trim() || !gmail.trim() || !password) {
-      Alert.alert('Incomplete Form ⚠️', 'Please fill in all officer onboarding fields.');
+      Alert.alert('Incomplete Form ⚠️', 'Please fill all fields.');
+      return;
+    }
+
+    const emailErr = validateEmail(gmail);
+    if (emailErr) {
+      Alert.alert('Invalid Email ⚠️', emailErr);
+      return;
+    }
+
+    const pwdCheck = validatePassword(password);
+    if (!pwdCheck.valid) {
+      Alert.alert('Weak Password 🔒', `Password must contain:\n• ${pwdCheck.errors.join('\n• ')}`);
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch ⚠️', 'Your secret passwords do not match.');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('Weak Password ⚠️', 'Password must be at least 6 characters.');
+      Alert.alert('Mismatch ⚠️', 'Passwords do not match.');
       return;
     }
 
     setIsLoading(true);
-
     const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
     const newOfficerProfile = {
       id: repId.trim(),
@@ -57,151 +76,85 @@ export default function SignupScreen() {
       zone: `${territory.trim()} • Route #${Math.floor(10 + Math.random()*80)}`,
       email: gmail.trim(),
       status: '🟢 Active in Field • Online Today',
-      coordinate: {
-        latitude: repCoords.latitude + (Math.random()*0.01 - 0.005),
-        longitude: repCoords.longitude + (Math.random()*0.01 - 0.005),
-      },
+      coordinate: { latitude: repCoords.latitude + (Math.random()*0.01 - 0.005), longitude: repCoords.longitude + (Math.random()*0.01 - 0.005) },
       salesVolume: '₦0 Today (Clean Baseline)',
     };
 
-    // 1. Save straight to memory so Admin Tab #2 sees them instantly
     OrderStore.addNewRep(newOfficerProfile);
-
-    // 2. Save straight to disk so Admin persists them on reboot
     await DatabaseEngine.saveNewRep(newOfficerProfile);
-
-    // 3. Dispatch automated onboarding welcome receipt via EmailJS!
-    const res = await EmailService.sendAgentWelcomeEmail({
-      agentName: fullName.trim(),
-      repId: repId.trim(),
-      territory: territory.trim(),
-      toEmail: gmail.trim(),
-    });
-
+    const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: gmail.trim() });
     setIsLoading(false);
 
     if (res.success) {
-      Alert.alert(
-        '🎉 Officer Registration Complete!', 
-        `Welcome to FS Hub, Officer ${fullName.trim()} (${repId})!\n\nYour profile has been synchronized with the Headquarters Admin suite (` +
-        `Mr. Adewale / Peter Patrick).\n\n📧 Automated Confirmation:\nOur cloud server has dispatched your official Officer ID instructions straight to "${gmail.trim()}"!`,
-        [{ text: 'Proceed to Field Portal 🚀', onPress: () => router.replace('/dashboard') }]
-      );
+      Alert.alert('🎉 Officer Registered!', `Welcome ${fullName.trim()}! Confirmation sent to ${gmail.trim()}`, [{ text: 'Proceed 🚀', onPress: () => router.replace('/home') }]);
     } else {
-      Alert.alert(
-        'Officer Registered (Email Notice)', 
-        `Officer account created & synchronized with Headquarters, but automated welcome email had notice: ${res.message}. You can proceed right away!`,
-        [{ text: 'Proceed to Portal ➔', onPress: () => router.replace('/dashboard') }]
-      );
+      Alert.alert('Registered (Email Notice)', `Account created but email failed: ${res.message}`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
     }
   };
+
+  const pwdLive = validatePassword(password);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView 
-          contentContainerStyle={styles.scrollContainer} 
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          
+        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { borderColor: colors.border }]}>
-              <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Login</Text>
+            <TouchableOpacity onPress={() => router.push('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
+              <Ionicons name="arrow-back" size={16} color={colors.cyan} />
+              <Text style={[styles.backText, { color: colors.cyan }]}> Back to Login</Text>
             </TouchableOpacity>
-
-            <Text style={[styles.mainTitle, { color: colors.green }]} numberOfLines={1} adjustsFontSizeToFit={true}>
-              📝 AGENT ONBOARDING
-            </Text>
-
-            <TouchableOpacity onPress={() => setIsDark(!isDark)} style={[styles.themeBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-            </TouchableOpacity>
+            <Text style={[styles.mainTitle, { color: colors.green }]}>📝 AGENT ONBOARDING</Text>
           </View>
-
-          <Text style={[styles.subText, { color: colors.subText }]}>
-            Register your mobile device, link your assigned territory, and authenticate your officer credentials on FS Hub.
-          </Text>
+          <Text style={[styles.subText, { color: colors.subText }]}>Register device with validated email & strong password (8+ chars, A-Z, a-z, 0-9, !@#)</Text>
 
           <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.green }]}>
-            
-            <Text style={[styles.label, { color: colors.subText }]}>FULL OFFICER NAME *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="e.g. Tunde Balogun"
-              placeholderTextColor="#64748B"
-              value={fullName}
-              onChangeText={setFullName}
-            />
+            <Text style={[styles.label, { color: colors.subText }]}>FULL NAME *</Text>
+            <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="e.g. Tunde Balogun" placeholderTextColor="#64748B" value={fullName} onChangeText={setFullName} />
 
-            <Text style={[styles.label, { color: colors.subText }]}>ASSIGNED REP ID / CODE *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="e.g. REP-2050"
-              placeholderTextColor="#64748B"
-              autoCapitalize="characters"
-              value={repId}
-              onChangeText={setRepId}
-            />
+            <Text style={[styles.label, { color: colors.subText }]}>REP ID *</Text>
+            <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="REP-2050" autoCapitalize="characters" value={repId} onChangeText={setRepId} />
 
-            <Text style={[styles.label, { color: colors.subText }]}>ASSIGNED TERRITORY OR ZONE *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="e.g. Ikeja Commercial Zone / Lagos Mainland"
-              placeholderTextColor="#64748B"
-              value={territory}
-              onChangeText={setTerritory}
-            />
+            <Text style={[styles.label, { color: colors.subText }]}>TERRITORY *</Text>
+            <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="Ikeja Commercial Zone" value={territory} onChangeText={setTerritory} />
 
-            <Text style={[styles.label, { color: colors.green }]}>OFFICER GMAIL / WORK EMAIL (MANDATORY FOR NOTIFICATIONS) *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.green, borderWidth: 1.5, color: colors.mainText }]}
-              placeholder="e.g. skybrown585@gmail.com"
-              placeholderTextColor="#64748B"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={gmail}
-              onChangeText={setGmail}
-            />
+            <Text style={[styles.label, { color: colors.green }]}>OFFICER GMAIL * (regex validated)</Text>
+            <View style={[styles.input, { backgroundColor: colors.background, borderColor: gmail && validateEmail(gmail) ? '#EF4444' : colors.green, flexDirection: 'row', alignItems: 'center', paddingVertical: 0 }]}>
+              <Ionicons name="mail-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
+              <TextInput style={{ flex: 1, color: colors.mainText, paddingVertical: 12 }} placeholder="name@gmail.com" keyboardType="email-address" autoCapitalize="none" value={gmail} onChangeText={setGmail} placeholderTextColor="#64748B" />
+              {gmail && !validateEmail(gmail) ? <Ionicons name="checkmark-circle" size={18} color="#10B981" /> : null}
+            </View>
+            {gmail && validateEmail(gmail) ? <Text style={styles.err}>{validateEmail(gmail)}</Text> : null}
 
-            <Text style={[styles.label, { color: colors.subText }]}>CREATE SECRET PASSWORD *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="Minimum 6 characters"
-              placeholderTextColor="#64748B"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
+            <Text style={[styles.label, { color: colors.subText }]}>CREATE STRONG PASSWORD *</Text>
+            <View style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', paddingVertical: 0 }]}>
+              <Ionicons name="lock-closed-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
+              <TextInput style={{ flex: 1, color: colors.mainText, paddingVertical: 12 }} placeholder="8+ chars, A-Z, a-z, 0-9, !@#" secureTextEntry={!showPwd} value={password} onChangeText={setPassword} placeholderTextColor="#64748B" />
+              <TouchableOpacity onPress={() => setShowPwd(!showPwd)} style={{ padding: 8 }}>
+                <Ionicons name={showPwd ? "eye-outline" : "eye-off-outline"} size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            {password.length > 0 && (
+              <View style={styles.checkBox}>
+                <Text style={styles.checkTitle}>Must contain:</Text>
+                <View style={styles.row}><Ionicons name={pwdLive.checks.length ? "checkmark-circle" : "close-circle"} size={14} color={pwdLive.checks.length ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkT, pwdLive.checks.length && { color: '#059669' }]}> 8+ chars</Text></View>
+                <View style={styles.row}><Ionicons name={pwdLive.checks.uppercase ? "checkmark-circle" : "close-circle"} size={14} color={pwdLive.checks.uppercase ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkT, pwdLive.checks.uppercase && { color: '#059669' }]}> Uppercase A-Z</Text></View>
+                <View style={styles.row}><Ionicons name={pwdLive.checks.lowercase ? "checkmark-circle" : "close-circle"} size={14} color={pwdLive.checks.lowercase ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkT, pwdLive.checks.lowercase && { color: '#059669' }]}> Lowercase a-z</Text></View>
+                <View style={styles.row}><Ionicons name={pwdLive.checks.number ? "checkmark-circle" : "close-circle"} size={14} color={pwdLive.checks.number ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkT, pwdLive.checks.number && { color: '#059669' }]}> Number 0-9</Text></View>
+                <View style={styles.row}><Ionicons name={pwdLive.checks.special ? "checkmark-circle" : "close-circle"} size={14} color={pwdLive.checks.special ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkT, pwdLive.checks.special && { color: '#059669' }]}> Special !@#$</Text></View>
+              </View>
+            )}
 
-            <Text style={[styles.label, { color: colors.subText }]}>CONFIRM SECRET PASSWORD *</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="Re-type secret password"
-              placeholderTextColor="#64748B"
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
+            <Text style={[styles.label, { color: colors.subText }]}>CONFIRM PASSWORD *</Text>
+            <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="Re-type" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholderTextColor="#64748B" />
 
-            <TouchableOpacity 
-              style={[styles.actionBtn, { backgroundColor: colors.green }, isLoading && { backgroundColor: '#475569' }]}
-              onPress={handleCompleteSignup}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.actionBtnText}>⚡ COMPLETE AGENT ONBOARDING & SEND EMAIL ✓</Text>
-              )}
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.green }, isLoading && { backgroundColor: '#475569' }]} onPress={handleCompleteSignup} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.actionBtnText}>⚡ COMPLETE ONBOARDING ✓</Text>}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.back()} style={styles.loginLinkRow}>
-              <Text style={[styles.loginLinkText, { color: colors.cyan }]}>Already registered on this device? <Text style={{fontWeight: '900'}}>Log In</Text></Text>
+            <TouchableOpacity onPress={() => router.push('/')} style={styles.loginLinkRow}>
+              <Text style={[styles.loginLinkText, { color: colors.cyan }]}>Already registered? <Text style={{fontWeight: '900'}}>Log In</Text></Text>
             </TouchableOpacity>
-
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -209,85 +162,23 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 130,
-    flexGrow: 1,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  backBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  backText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  mainTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    flexShrink: 1,
-  },
-  themeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  subText: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  formCard: {
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1.5,
-    elevation: 4,
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  actionBtn: {
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    elevation: 4,
-    marginTop: 16,
-  },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  loginLinkRow: {
-    alignItems: 'center',
-    marginTop: 18,
-  },
-  loginLinkText: {
-    fontSize: 12,
-  },
+  container: { flex: 1 },
+  scrollContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 130, flexGrow: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  backBtn: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  backText: { fontSize: 12, fontWeight: '800', marginLeft: 4 },
+  mainTitle: { fontSize: 16, fontWeight: '900' },
+  subText: { fontSize: 12, lineHeight: 18, marginBottom: 16 },
+  formCard: { borderRadius: 18, padding: 18, borderWidth: 1.5, elevation: 4, marginBottom: 20 },
+  label: { fontSize: 11, fontWeight: '800', marginBottom: 6, marginTop: 8 },
+  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, marginBottom: 8 },
+  err: { color: '#EF4444', fontSize: 11, marginBottom: 6, fontWeight: '600' },
+  checkBox: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, padding: 10, marginBottom: 12 },
+  checkTitle: { fontSize: 11, fontWeight: '800', marginBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  checkT: { fontSize: 11, color: '#64748B', marginLeft: 4 },
+  actionBtn: { paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 },
+  actionBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  loginLinkRow: { alignItems: 'center', marginTop: 18 },
+  loginLinkText: { fontSize: 12 },
 });

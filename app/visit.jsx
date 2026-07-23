@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 
 // Look right here: We import `expo-image-picker` to ask for camera permissions and take REAL photos!
 import * as ImagePicker from 'expo-image-picker';
 
 export default function VisitOrdersScreen() {
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
   
