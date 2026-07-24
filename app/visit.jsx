@@ -7,6 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
+import { DatabaseEngine } from './_DatabaseEngine';
+import * as Location from 'expo-location';
 
 // Look right here: We import `expo-image-picker` to ask for camera permissions and take REAL photos!
 import * as ImagePicker from 'expo-image-picker';
@@ -18,6 +20,7 @@ export default function VisitOrdersScreen() {
   
   // Look right right here: We store the real captured photo URI inside local state & OrderStore!
   const [photoUri, setPhotoUri] = useState(OrderStore.currentClient.checkInPhotoUri || null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const client = OrderStore.currentClient;
   const { distinctProducts, totalUnits, grandTotal } = OrderStore.getCartSummary();
@@ -64,17 +67,41 @@ export default function VisitOrdersScreen() {
       quality: 0.7, // 70% quality keeps the file size small and fast for offline storage!
     });
 
-    // 3. If the user took the photo without canceling:
+    // Upload the image and a fresh GPS reading as a permanent check-in record.
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const capturedUri = result.assets[0].uri;
       setPhotoUri(capturedUri);
-      OrderStore.currentClient.checkInPhotoTaken = true;
-      OrderStore.currentClient.checkInPhotoUri = capturedUri;
-
-      Alert.alert(
-        '📸 Geotag Photo Saved Locally!', 
-        `Store photo saved to local memory (\`AsyncStorage\`) and watermarked with ${client.gpsVerified}! Attached to today's checkout.`
-      );
+      setIsUploadingPhoto(true);
+      try {
+        const locationPermission = await Location.requestForegroundPermissionsAsync();
+        if (locationPermission.status !== 'granted') throw new Error('Location permission is required for a verified check-in.');
+        const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+        const checkinId = `CHK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+        const photoPath = `checkins/${client.id}/${checkinId}.jpg`;
+        const upload = await DatabaseEngine.uploadImage(capturedUri, photoPath);
+        if (!upload.success) throw new Error(upload.error);
+        const saved = await DatabaseEngine.saveCheckin({
+          id: checkinId,
+          client_id: client.id,
+          rep_id: OrderStore.currentAgent?.id,
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          accuracy_m: current.coords.accuracy,
+          photo_path: photoPath,
+          checked_in_at: new Date().toISOString(),
+          verification_status: current.coords.accuracy && current.coords.accuracy <= 100 ? 'gps_verified' : 'low_accuracy'
+        });
+        if (!saved.success) throw new Error(saved.error);
+        OrderStore.currentClient.checkInPhotoTaken = true;
+        OrderStore.currentClient.checkInPhotoUri = capturedUri;
+        OrderStore.currentClient.checkInPhotoPath = photoPath;
+        OrderStore.currentClient.gpsVerified = `Lat: ${current.coords.latitude.toFixed(6)} | Lon: ${current.coords.longitude.toFixed(6)} | ±${Math.round(current.coords.accuracy || 0)}m`;
+        Alert.alert('Check-in backed up ✅', 'The photo, GPS position, accuracy, representative, client, and timestamp are stored in Supabase.');
+      } catch (e) {
+        Alert.alert('Check-in backup failed', `${e.message}\n\nThe photo is still visible on this phone, but it is not marked as cloud verified.`);
+      } finally {
+        setIsUploadingPhoto(false);
+      }
     }
   };
 
@@ -115,6 +142,7 @@ export default function VisitOrdersScreen() {
         <TouchableOpacity 
           style={[styles.photoCard, { backgroundColor: photoUri ? '#064E3B' : '#0B1120', borderColor: photoUri ? '#10B981' : colors.cyan }]}
           onPress={handleTakePhoto}
+          disabled={isUploadingPhoto}
         >
           {photoUri ? (
             <View style={styles.capturedBoxWrapper}>

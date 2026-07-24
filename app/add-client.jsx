@@ -1,6 +1,6 @@
 // ADD CLIENT - WHITE PREMIUM ELEGANT, ZERO FAKE, LINKED TO SUPABASE
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,16 @@ import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
+import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+
+let MapView = null;
+let Marker = null;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+}
 
 export default function AddClientScreen() {
   const { colors } = useTheme();
@@ -21,8 +31,46 @@ export default function AddClientScreen() {
   const [businessType, setBusinessType] = useState('⚡ Electronics & Solar');
   const [creditLimit, setCreditLimit] = useState('500,000');
   const [isSending, setIsSending] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [location, setLocation] = useState(null);
+  const [locationMethod, setLocationMethod] = useState(null);
+  const [photoUri, setPhotoUri] = useState(null);
+  const [mapVisible, setMapVisible] = useState(false);
 
   const categories = ['⚡ Electronics & Solar', '🛒 Provisions', '👔 Clothing', '💊 Pharma', '📦 Wholesale', '🏪 Retail'];
+
+  const captureCurrentLocation = async () => {
+    setIsLocating(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Location permission needed', 'Allow location access to register the client at this store.');
+        return;
+      }
+      const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+      const selected = { latitude: result.coords.latitude, longitude: result.coords.longitude, accuracy: result.coords.accuracy || null };
+      setLocation(selected);
+      setLocationMethod('current_gps');
+      OrderStore.repLocation = { latitude: selected.latitude, longitude: selected.longitude };
+      if (selected.accuracy && selected.accuracy > 100) {
+        Alert.alert('Weak GPS accuracy', `Accuracy is ±${Math.round(selected.accuracy)}m. Move outdoors and retry for a more reliable store marker.`);
+      }
+    } catch (e) {
+      Alert.alert('Could not read location', e.message);
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  const takeStorefrontPhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Camera permission needed', 'Allow camera access to capture the storefront.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: false });
+    if (!result.canceled && result.assets?.[0]) setPhotoUri(result.assets[0].uri);
+  };
 
   const handleAddClient = async () => {
     if (!storeName || !phone || !address || !storeEmail) {
@@ -35,11 +83,31 @@ export default function AddClientScreen() {
       return;
     }
 
-    const session = await DatabaseEngine.getSession();
-    const repId = session?.id || OrderStore.currentAgent?.id || 'UNKNOWN_REP';
+    if (!location) {
+      Alert.alert('Client location required', 'Use your current GPS location, or choose the exact store position on the map.');
+      return;
+    }
 
-    const newClientId = `CL-${Math.floor(100 + Math.random()*900)}`;
-    const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
+    const session = await DatabaseEngine.getSession();
+    const repId = session?.id || OrderStore.currentAgent?.id;
+    if (!repId) {
+      Alert.alert('Session expired', 'Please log in again before registering a client.');
+      return;
+    }
+
+    setIsSending(true);
+    const newClientId = `CL-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    let photoPath = null;
+    if (photoUri) {
+      const upload = await DatabaseEngine.uploadImage(photoUri, `clients/${newClientId}/storefront.jpg`);
+      if (!upload.success) {
+        setIsSending(false);
+        Alert.alert('Photo upload failed', `${upload.error}\n\nThe client was not saved. Retry when internet is stable.`);
+        return;
+      }
+      photoPath = upload.path;
+    }
+
     const genuineClient = {
       id: newClientId,
       name: storeName.trim(),
@@ -54,23 +122,30 @@ export default function AddClientScreen() {
       creditLimit: `₦${creditLimit}`,
       credit_limit: `₦${creditLimit}`,
       standing: 'New Client 🟢',
-      gpsVerified: `Lat: ${repCoords.latitude.toFixed(4)}° N | Lon: ${repCoords.longitude.toFixed(4)}° E`,
-      gps_coordinates: `Lat: ${repCoords.latitude.toFixed(4)}° N | Lon: ${repCoords.longitude.toFixed(4)}° E`,
+      gpsVerified: `Lat: ${location.latitude.toFixed(6)} | Lon: ${location.longitude.toFixed(6)}`,
+      gps_coordinates: `Lat: ${location.latitude.toFixed(6)} | Lon: ${location.longitude.toFixed(6)}`,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      location_accuracy_m: location.accuracy,
+      location_method: locationMethod,
+      location_captured_at: new Date().toISOString(),
+      storefront_photo_path: photoPath,
       businessType,
       rep_id: repId,
       createdByRepId: repId,
       created_by_rep_id: repId,
-      coordinate: {
-        latitude: repCoords.latitude + (Math.random()*0.01 - 0.005),
-        longitude: repCoords.longitude + (Math.random()*0.01 - 0.005),
-      }
+      coordinate: { latitude: location.latitude, longitude: location.longitude }
     };
 
+    const saveRes = await DatabaseEngine.saveNewClient(genuineClient);
+    if (!saveRes.success) {
+      setIsSending(false);
+      Alert.alert('Client was not saved', saveRes.error || `Supabase error ${saveRes.status}: ${saveRes.text || 'Unknown error'}`);
+      return;
+    }
     OrderStore.addNewClient(genuineClient);
     RouteStore.addNewClient(genuineClient);
-    const saveRes = await DatabaseEngine.saveNewClient(genuineClient);
-    
-    setIsSending(true);
+
     const emailResponse = await EmailService.sendWelcomeEmail({
       storeName: storeName.trim(),
       ownerName: ownerName.trim(),
@@ -119,6 +194,26 @@ export default function AddClientScreen() {
           <Text style={styles.label}>ADDRESS * (for GPS)</Text>
           <TextInput style={styles.input} placeholder="14 Allen Avenue, Ikeja" value={address} onChangeText={setAddress} placeholderTextColor="#94A3B8" />
 
+          <Text style={styles.label}>EXACT STORE LOCATION *</Text>
+          <TouchableOpacity style={styles.locationPrimary} onPress={captureCurrentLocation} disabled={isLocating}>
+            {isLocating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.locationPrimaryText}>📍 Use My Current Location (Recommended)</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.locationAlternative} onPress={() => setMapVisible(true)}>
+            <Text style={styles.locationAlternativeText}>🗺️ Choose Exact Location on Map</Text>
+          </TouchableOpacity>
+          {location && (
+            <View style={styles.locationResult}>
+              <Text style={styles.locationResultTitle}>✓ Store marker selected</Text>
+              <Text style={styles.locationResultText}>{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)} • {locationMethod === 'current_gps' ? `GPS${location.accuracy ? ` ±${Math.round(location.accuracy)}m` : ''}` : 'Selected on map'}</Text>
+            </View>
+          )}
+
+          <Text style={styles.label}>STOREFRONT PHOTO</Text>
+          <TouchableOpacity style={styles.photoButton} onPress={takeStorefrontPhoto}>
+            {photoUri ? <Image source={{ uri: photoUri }} style={styles.photoPreview} /> : <Text style={styles.photoButtonText}>📸 Take Storefront Photo</Text>}
+          </TouchableOpacity>
+          {photoUri && <Text style={styles.photoHint}>Tap photo to retake</Text>}
+
           <Text style={styles.label}>BUSINESS TYPE</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginBottom: 12 }}>
             {categories.map((cat, i) => (
@@ -137,6 +232,41 @@ export default function AddClientScreen() {
         </View>
 
       </ScrollView>
+
+      <Modal visible={mapVisible} animationType="slide" onRequestClose={() => setMapVisible(false)}>
+        <SafeAreaView style={styles.mapModal}>
+          <View style={styles.mapHeader}>
+            <TouchableOpacity onPress={() => setMapVisible(false)}><Text style={styles.mapCancel}>Cancel</Text></TouchableOpacity>
+            <Text style={styles.mapTitle}>Tap the exact store location</Text>
+            <TouchableOpacity onPress={() => location && setMapVisible(false)} disabled={!location}><Text style={[styles.mapDone, !location && { opacity: 0.4 }]}>Use Pin</Text></TouchableOpacity>
+          </View>
+          {Platform.OS === 'web' || !MapView ? (
+            <View style={styles.mapUnavailable}><Text>Map selection is available on Android/iOS. Use current location here.</Text></View>
+          ) : (
+            <MapView
+              style={{ flex: 1 }}
+              initialRegion={{
+                latitude: location?.latitude || OrderStore.repLocation.latitude,
+                longitude: location?.longitude || OrderStore.repLocation.longitude,
+                latitudeDelta: 0.02,
+                longitudeDelta: 0.02
+              }}
+              showsUserLocation
+              onPress={(event) => {
+                const { latitude, longitude } = event.nativeEvent.coordinate;
+                setLocation({ latitude, longitude, accuracy: null });
+                setLocationMethod('map_selected');
+              }}
+            >
+              {location && <Marker coordinate={location} draggable onDragEnd={(event) => {
+                const { latitude, longitude } = event.nativeEvent.coordinate;
+                setLocation({ latitude, longitude, accuracy: null });
+                setLocationMethod('map_selected');
+              }} />}
+            </MapView>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -157,4 +287,21 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 11, color: '#64748B', fontWeight: '600' },
   saveBtn: { backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 },
   saveBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  locationPrimary: { backgroundColor: '#2563EB', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
+  locationPrimaryText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
+  locationAlternative: { borderWidth: 1.5, borderColor: '#2563EB', padding: 13, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
+  locationAlternativeText: { color: '#2563EB', fontWeight: '800', fontSize: 12 },
+  locationResult: { backgroundColor: '#ECFDF5', borderColor: '#10B981', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8 },
+  locationResultTitle: { color: '#047857', fontWeight: '900', fontSize: 12 },
+  locationResultText: { color: '#065F46', fontSize: 10, marginTop: 3 },
+  photoButton: { minHeight: 100, backgroundColor: '#F1F5F9', borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#94A3B8', borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  photoButtonText: { color: '#334155', fontWeight: '800' },
+  photoPreview: { width: '100%', height: 180 },
+  photoHint: { color: '#64748B', fontSize: 10, textAlign: 'center', marginTop: 4 },
+  mapModal: { flex: 1, backgroundColor: '#FFF' },
+  mapHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  mapTitle: { color: '#0F172A', fontWeight: '900', fontSize: 13 },
+  mapCancel: { color: '#EF4444', fontWeight: '800' },
+  mapDone: { color: '#2563EB', fontWeight: '900' },
+  mapUnavailable: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
 });

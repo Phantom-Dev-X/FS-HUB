@@ -51,6 +51,25 @@ alter table public.fshub_clients add column if not exists created_by_rep_id text
 alter table public.fshub_clients add column if not exists business_type text;
 alter table public.fshub_clients add column if not exists phone text;
 alter table public.fshub_clients add column if not exists standing text;
+alter table public.fshub_clients add column if not exists latitude double precision;
+alter table public.fshub_clients add column if not exists longitude double precision;
+alter table public.fshub_clients add column if not exists location_accuracy_m double precision;
+alter table public.fshub_clients add column if not exists location_method text;
+alter table public.fshub_clients add column if not exists location_captured_at timestamptz;
+alter table public.fshub_clients add column if not exists storefront_photo_path text;
+
+-- Permanent audit trail for real check-ins and their uploaded photos.
+create table if not exists public.fshub_checkins (
+  id text primary key,
+  client_id text not null,
+  rep_id text not null,
+  latitude double precision not null,
+  longitude double precision not null,
+  accuracy_m double precision,
+  photo_path text,
+  checked_in_at timestamptz default now(),
+  verification_status text default 'captured'
+);
 
 -- Catalog
 create table if not exists public.fshub_catalog (
@@ -99,6 +118,25 @@ grant select, insert, update, delete on table public.fshub_clients to anon, auth
 grant select, insert, update, delete on table public.fshub_catalog to anon, authenticated;
 grant select, insert, update, delete on table public.fshub_orders to anon, authenticated;
 grant select, insert, update, delete on table public.fshub_admins to anon, authenticated;
+grant select, insert, update, delete on table public.fshub_checkins to anon, authenticated;
+
+-- Private media bucket. The database stores paths; image bytes belong in Storage.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('fshub-media', 'fshub-media', false, 10485760, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "FS Hub media insert" on storage.objects;
+create policy "FS Hub media insert" on storage.objects for insert to anon, authenticated
+with check (bucket_id = 'fshub-media');
+drop policy if exists "FS Hub media update" on storage.objects;
+create policy "FS Hub media update" on storage.objects for update to anon, authenticated
+using (bucket_id = 'fshub-media') with check (bucket_id = 'fshub-media');
+drop policy if exists "FS Hub media read" on storage.objects;
+create policy "FS Hub media read" on storage.objects for select to anon, authenticated
+using (bucket_id = 'fshub-media');
 
 -- Prototype access model. Replace this with proper RLS policies before launch.
 alter table public.fshub_reps disable row level security;
@@ -106,6 +144,7 @@ alter table public.fshub_clients disable row level security;
 alter table public.fshub_catalog disable row level security;
 alter table public.fshub_orders disable row level security;
 alter table public.fshub_admins disable row level security;
+alter table public.fshub_checkins disable row level security;
 
 insert into public.fshub_admins (id, name, email, role, is_primary, is_super)
 values ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', 'Primary Super Admin', true, true)

@@ -176,6 +176,39 @@ export const DatabaseEngine = {
     }
   },
 
+  uploadImage: async function(uri, storagePath) {
+    try {
+      const localResponse = await fetch(uri);
+      const imageBlob = await localResponse.blob();
+      const response = await fetch(`https://evcbqsgznbrzojjbtnfd.supabase.co/storage/v1/object/fshub-media/${storagePath}`, {
+        method: 'POST',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Content-Type': imageBlob.type || 'image/jpeg',
+          'x-upsert': 'true'
+        },
+        body: imageBlob
+      });
+      const text = await response.text();
+      return response.ok ? { success: true, path: storagePath } : { success: false, error: `Storage error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: `Image upload failed: ${e.message}` };
+    }
+  },
+
+  saveCheckin: async function(checkin) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_checkins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}`, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(checkin)
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) { return { success: false, error: e.message }; }
+  },
+
   // CLIENTS
   saveNewClient: async function(clientObject) {
     try {
@@ -193,6 +226,12 @@ export const DatabaseEngine = {
         business_type: clientObject.businessType || '',
         phone: clientObject.phone || '',
         standing: clientObject.standing || 'Good Standing 🟢',
+        latitude: clientObject.latitude,
+        longitude: clientObject.longitude,
+        location_accuracy_m: clientObject.location_accuracy_m,
+        location_method: clientObject.location_method,
+        location_captured_at: clientObject.location_captured_at,
+        storefront_photo_path: clientObject.storefront_photo_path,
         created_at: new Date().toISOString()
       };
 
