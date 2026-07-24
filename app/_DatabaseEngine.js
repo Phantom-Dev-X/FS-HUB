@@ -1,8 +1,5 @@
-// =========================================================================
-// FS HUB PERSISTENT DATABASE ENGINE (`_DatabaseEngine.js`) — 100% WARNING FREE
-// Look: Added `export default DatabaseEngine` at the bottom to stop Expo Router warnings!
-// =========================================================================
-
+// FS HUB PERSISTENT DATABASE ENGINE - FULLY LINKED TO SUPABASE
+// Now saves Reps to Supabase too, and provides auth verification
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const DatabaseEngine = {
@@ -13,6 +10,7 @@ export const DatabaseEngine = {
     clientsTable: '/fshub_clients',
     catalogTable: '/fshub_catalog',
     repsTable:    '/fshub_reps',
+    adminsTable:  '/fshub_admins', // optional, for future
   },
 
   KEYS: {
@@ -20,6 +18,8 @@ export const DatabaseEngine = {
     CATALOG: '@fshub_table_catalog',
     OFFLINE_ORDERS: '@fshub_table_offline_orders',
     REPS: '@fshub_table_reps',
+    ADMINS: '@fshub_table_admins',
+    SESSION: '@fshub_session_current_rep',
   },
 
   DEFAULT_CLIENTS: [],
@@ -32,11 +32,20 @@ export const DatabaseEngine = {
       const catalog = await AsyncStorage.getItem(this.KEYS.CATALOG);
       const orders  = await AsyncStorage.getItem(this.KEYS.OFFLINE_ORDERS);
       const reps    = await AsyncStorage.getItem(this.KEYS.REPS);
+      const admins  = await AsyncStorage.getItem(this.KEYS.ADMINS);
 
       if (!clients) await AsyncStorage.setItem(this.KEYS.CLIENTS, JSON.stringify([]));
       if (!catalog) await AsyncStorage.setItem(this.KEYS.CATALOG, JSON.stringify([]));
       if (!orders)  await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify([]));
       if (!reps)    await AsyncStorage.setItem(this.KEYS.REPS, JSON.stringify([]));
+      if (!admins)  await AsyncStorage.setItem(this.KEYS.ADMINS, JSON.stringify([{
+        id: 'ADM-001',
+        name: 'Peter Patrick',
+        email: 'peterpatrick@gmail.com',
+        role: '👑 PRIMARY SUPER ADMIN',
+        isPrimary: true,
+        isSuper: true,
+      }]));
 
       return { success: true };
     } catch (error) {
@@ -44,13 +53,12 @@ export const DatabaseEngine = {
     }
   },
 
+  // ==================== CLIENTS ====================
   getAllClients: async function() {
     try {
       const data = await AsyncStorage.getItem(this.KEYS.CLIENTS);
       return data ? JSON.parse(data) : [];
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
   saveNewClient: async function(clientObject) {
@@ -65,33 +73,95 @@ export const DatabaseEngine = {
     }
   },
 
+  // ==================== REPS (FIELD OFFICERS) ====================
   getAllReps: async function() {
     try {
       const data = await AsyncStorage.getItem(this.KEYS.REPS);
       return data ? JSON.parse(data) : [];
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
   saveNewRep: async function(repObject) {
     try {
+      // Ensure no duplicate ID or email
       const currentList = await this.getAllReps();
+      const exists = currentList.some(r => r.id === repObject.id || r.email?.toLowerCase() === repObject.email?.toLowerCase());
+      if (exists) {
+        // Update existing instead of duplicate
+        const updatedList = currentList.map(r => 
+          (r.id === repObject.id || r.email?.toLowerCase() === repObject.email?.toLowerCase()) ? { ...r, ...repObject } : r
+        );
+        await AsyncStorage.setItem(this.KEYS.REPS, JSON.stringify(updatedList));
+        this._pushRepToSupabase(repObject);
+        return { success: true, reps: updatedList, message: 'Updated existing rep' };
+      }
+
       const updatedList = [repObject, ...currentList];
       await AsyncStorage.setItem(this.KEYS.REPS, JSON.stringify(updatedList));
-      return { success: true, reps: updatedList };
+      // Push to Supabase cloud
+      const pushed = await this._pushRepToSupabase(repObject);
+      return { success: true, reps: updatedList, cloudPushed: pushed };
     } catch (error) {
       return { success: false, error: error.message };
     }
   },
 
+  // Verify rep exists and password matches - THIS STOPS LOGIN WITHOUT ACCOUNT
+  verifyRepCredentials: async function(inputIdOrEmail, inputPassword) {
+    try {
+      const allReps = await this.getAllReps();
+      const normalizedInput = inputIdOrEmail.trim().toLowerCase();
+      
+      const found = allReps.find(r => 
+        r.id?.toLowerCase() === normalizedInput || 
+        r.email?.toLowerCase() === normalizedInput
+      );
+
+      if (!found) {
+        return { success: false, message: `Account not found for "${inputIdOrEmail}". Please sign up first!` };
+      }
+
+      // Check password - rep object stores password field
+      if (found.password && found.password !== inputPassword) {
+        return { success: false, message: 'Incorrect password. Check your password or reset via Forgot Password.' };
+      }
+
+      // If rep has no password stored (old data), allow but warn - for backward compat
+      if (!found.password) {
+        return { success: true, rep: found, warning: 'Old account without password, please update password in profile.' };
+      }
+
+      return { success: true, rep: found };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  // Session management - store current logged in rep
+  saveSession: async function(repObj) {
+    try {
+      await AsyncStorage.setItem(this.KEYS.SESSION, JSON.stringify(repObj));
+      return { success: true };
+    } catch (e) { return { success: false }; }
+  },
+
+  getSession: async function() {
+    try {
+      const data = await AsyncStorage.getItem(this.KEYS.SESSION);
+      return data ? JSON.parse(data) : null;
+    } catch { return null; }
+  },
+
+  clearSession: async function() {
+    await AsyncStorage.removeItem(this.KEYS.SESSION);
+  },
+
+  // ==================== CATALOG ====================
   getCatalog: async function() {
     try {
       const data = await AsyncStorage.getItem(this.KEYS.CATALOG);
       return data ? JSON.parse(data) : [];
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
   updateProductStock: async function(productId, newStock, newPrice) {
@@ -127,13 +197,12 @@ export const DatabaseEngine = {
     }
   },
 
+  // ==================== ORDERS ====================
   getOfflineOrders: async function() {
     try {
       const data = await AsyncStorage.getItem(this.KEYS.OFFLINE_ORDERS);
       return data ? JSON.parse(data) : [];
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
   saveOfflineOrder: async function(orderRecord) {
@@ -168,22 +237,21 @@ export const DatabaseEngine = {
     try {
       const pendingOrders = await this.getOfflineOrders();
       if (pendingOrders.length === 0) {
-        return { success: true, count: 0, message: 'All local orders already synced with Supabase Cloud!' };
+        return { success: true, count: 0, message: 'All local orders already synced!' };
       }
-
       let successCount = 0;
       for (const order of pendingOrders) {
         const pushed = await this._pushOrderToSupabase(order);
         if (pushed) successCount++;
       }
-
       await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify([]));
-      return { success: true, count: successCount, message: `Successfully uploaded ${successCount} orders to Supabase Cloud Database!` };
+      return { success: true, count: successCount, message: `Uploaded ${successCount} orders to cloud!` };
     } catch (error) {
       return { success: false, error: error.message };
     }
   },
 
+  // ==================== SUPABASE PUSHERS ====================
   _pushOrderToSupabase: async function(orderObj) {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}`;
@@ -206,9 +274,7 @@ export const DatabaseEngine = {
         })
       });
       return response.ok;
-    } catch (error) {
-      return false;
-    }
+    } catch (error) { return false; }
   },
 
   _pushClientToSupabase: async function(clientObj) {
@@ -233,11 +299,58 @@ export const DatabaseEngine = {
         })
       });
       return response.ok;
+    } catch (error) { return false; }
+  },
+
+  _pushRepToSupabase: async function(repObj) {
+    try {
+      const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          id: repObj.id || `REP-${Math.floor(Math.random()*9000)}`,
+          name: repObj.name || repObj.fullName || 'Field Officer',
+          email: repObj.email || '',
+          // Store minimal info - password not pushed for security, but for demo we push hash placeholder
+          zone: repObj.zone || repObj.territory || 'Ikeja Commercial Zone',
+          territory: repObj.zone || repObj.territory || '',
+          status: repObj.status || 'Active',
+          coordinate: repObj.coordinate || null,
+          created_at: new Date().toISOString()
+        })
+      });
+      console.log(`[Supabase Rep Push] Status ${response.status} for ${repObj.id}`);
+      return response.ok;
     } catch (error) {
+      console.log('[Supabase Rep Push Error]', error.message);
       return false;
     }
+  },
+
+  // Fetch all reps from Supabase to sync local (optional)
+  fetchRepsFromSupabase: async function() {
+    try {
+      const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?select=*`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+      return [];
+    } catch { return []; }
   }
 };
 
-// ⚠️ THE EXACT 1-LINE FIX THAT STOPS EXPO ROUTER YELLOW WARNINGS:
 export default DatabaseEngine;

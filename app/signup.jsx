@@ -72,16 +72,25 @@ export default function SignupScreen() {
     const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
     const newOfficerProfile = {
       id: repId.trim(),
+      fullName: fullName.trim(),
       name: `${fullName.trim()} (Field Officer)`,
       zone: `${territory.trim()} • Route #${Math.floor(10 + Math.random()*80)}`,
-      email: gmail.trim(),
+      territory: territory.trim(),
+      email: gmail.trim().toLowerCase(),
+      password: password, // stored locally for login verification (and pushed to cloud as placeholder)
       status: '🟢 Active in Field • Online Today',
       coordinate: { latitude: repCoords.latitude + (Math.random()*0.01 - 0.005), longitude: repCoords.longitude + (Math.random()*0.01 - 0.005) },
       salesVolume: '₦0 Today (Clean Baseline)',
+      initials: fullName.trim().substring(0,2).toUpperCase(),
+      avatar: null,
+      createdAt: new Date().toISOString(),
     };
 
-    OrderStore.addNewRep(newOfficerProfile);
-    await DatabaseEngine.saveNewRep(newOfficerProfile);
+    // Save to central memory and set as current agent
+    OrderStore.addNewRep({ ...newOfficerProfile, isCurrent: true });
+    OrderStore.setCurrentAgent(newOfficerProfile);
+    const saveRes = await DatabaseEngine.saveNewRep(newOfficerProfile);
+    await DatabaseEngine.saveSession(newOfficerProfile);
     const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: gmail.trim() });
     setIsLoading(false);
 

@@ -19,7 +19,12 @@ export default function ProfileScreen() {
   const handleLogout = () => {
     Alert.alert('🔒 Log Out', 'End your officer session? Ensure offline orders synced!', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => router.replace('/') },
+      { text: 'Log Out', style: 'destructive', onPress: async () => {
+        // Clear session and current agent
+        const { DatabaseEngine } = await import('./_DatabaseEngine');
+        await DatabaseEngine.clearSession();
+        router.replace('/');
+      }},
     ]);
   };
 

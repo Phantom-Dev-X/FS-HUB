@@ -1,19 +1,15 @@
-// =========================================================================
-// FS HUB SHARED MEMORY (`_OrderStore.js`) — 100% WARNING FREE
-// Look right right here: Added `export default OrderStore` at the very bottom so Expo Router stops warning!
-// =========================================================================
-
+// FS HUB SHARED MEMORY - FULLY LINKED TO DATABASE
 export const OrderStore = {
   repLocation: { latitude: 6.6018, longitude: 3.3515 },
   currentClient: null,
-  // Premium agent profile - shows in elegant home header
   currentAgent: {
-    name: 'Tunde Balogun',
-    id: 'REP-2049',
-    role: 'Senior Field Officer',
+    name: 'Guest Officer',
+    id: 'REP-GUEST',
+    role: 'Field Officer',
     territory: 'Ikeja Commercial Zone • Route #14',
-    avatar: null, // if null, show initials template
-    initials: 'TB',
+    avatar: null,
+    initials: 'GO',
+    email: '',
   },
 
   clients: [],
@@ -32,21 +28,54 @@ export const OrderStore = {
     const exists = this.catalog.some(p => p.id === prodObj.id || p.barcode === prodObj.barcode);
     if (!exists) {
       this.catalog = [prodObj, ...this.catalog];
-      console.log(`[OrderStore] Admin added new product "${prodObj.name}" to master catalog.`);
+      console.log(`[OrderStore] Added product "${prodObj.name}"`);
     }
   },
 
   addNewRep: function(repObj) {
-    const exists = this.activeReps.some(r => r.id === repObj.id || r.email === repObj.email);
+    // Support both id and email uniqueness
+    const exists = this.activeReps.some(r => r.id === repObj.id || r.email?.toLowerCase() === repObj.email?.toLowerCase());
     if (!exists) {
       this.activeReps = [repObj, ...this.activeReps];
+    } else {
+      // Update existing
+      this.activeReps = this.activeReps.map(r => 
+        (r.id === repObj.id || r.email?.toLowerCase() === repObj.email?.toLowerCase()) ? { ...r, ...repObj } : r
+      );
     }
+    // Also set as currentAgent if this is the logged in rep
+    if (repObj.isCurrent) {
+      this.currentAgent = {
+        name: repObj.name?.replace(' (Field Officer)', '') || repObj.fullName || repObj.name,
+        id: repObj.id,
+        role: 'Senior Field Officer',
+        territory: repObj.zone || repObj.territory || 'Ikeja Commercial Zone',
+        avatar: repObj.avatar || null,
+        initials: (repObj.name?.substring(0,2) || 'FO').toUpperCase(),
+        email: repObj.email,
+      };
+    }
+  },
+
+  setCurrentAgent: function(repObj) {
+    this.currentAgent = {
+      name: repObj.name?.replace(' (Field Officer)', '') || repObj.fullName || repObj.name || 'Field Officer',
+      id: repObj.id,
+      role: repObj.role || 'Senior Field Officer',
+      territory: repObj.zone || repObj.territory || 'Ikeja Commercial Zone',
+      avatar: repObj.avatar || null,
+      initials: repObj.initials || (repObj.name?.substring(0,2) || 'FO').toUpperCase(),
+      email: repObj.email || '',
+    };
+    // Also mark as current in activeReps
+    this.activeReps.forEach(r => r.isCurrent = false);
+    const idx = this.activeReps.findIndex(r => r.id === repObj.id || r.email === repObj.email);
+    if (idx > -1) this.activeReps[idx].isCurrent = true;
   },
 
   addToCart: function(productId, qtyToAdd) {
     const product = this.catalog.find(p => p.id === productId);
     if (!product) return;
-
     const existingIndex = this.cart.findIndex(item => item.id === productId);
     if (existingIndex > -1) {
       this.cart[existingIndex].qty = qtyToAdd;
@@ -71,8 +100,11 @@ export const OrderStore = {
     const totalUnits = this.cart.reduce((sum, item) => sum + item.qty, 0);
     const grandTotal = this.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     return { distinctProducts, totalUnits, grandTotal };
+  },
+
+  clearCart: function() {
+    this.cart = [];
   }
 };
 
-// ⚠️ THE EXACT 1-LINE FIX THAT STOPS EXPO ROUTER YELLOW WARNINGS:
 export default OrderStore;
