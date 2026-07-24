@@ -35,6 +35,9 @@ export default function AddClientScreen() {
       return;
     }
 
+    const session = await DatabaseEngine.getSession();
+    const repId = session?.id || OrderStore.currentAgent?.id || 'UNKNOWN_REP';
+
     const newClientId = `CL-${Math.floor(100 + Math.random()*900)}`;
     const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
     const genuineClient = {
@@ -49,9 +52,14 @@ export default function AddClientScreen() {
       lastVisited: 'Just Added',
       lastOrderAmount: 'No orders yet',
       creditLimit: `₦${creditLimit}`,
+      credit_limit: `₦${creditLimit}`,
       standing: 'New Client 🟢',
       gpsVerified: `Lat: ${repCoords.latitude.toFixed(4)}° N | Lon: ${repCoords.longitude.toFixed(4)}° E`,
+      gps_coordinates: `Lat: ${repCoords.latitude.toFixed(4)}° N | Lon: ${repCoords.longitude.toFixed(4)}° E`,
       businessType,
+      rep_id: repId,
+      createdByRepId: repId,
+      created_by_rep_id: repId,
       coordinate: {
         latitude: repCoords.latitude + (Math.random()*0.01 - 0.005),
         longitude: repCoords.longitude + (Math.random()*0.01 - 0.005),

@@ -28,15 +28,39 @@ if (Platform.OS !== 'web') {
 }
 
 export default function DashboardScreen() {
-  // GLOBAL THEME - synced from profile/settings, not local anymore
   const { isDark, colors } = useTheme();
   
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
   const [locationStatus, setLocationStatus] = useState('Checking GPS...');
+  const [myClientsCount, setMyClientsCount] = useState(OrderStore.clients.length);
+  const [currentAgent, setCurrentAgent] = useState(OrderStore.currentAgent);
 
-  const totalRegisteredClients = OrderStore.clients.length;
+  const totalRegisteredClients = myClientsCount;
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
-  const agent = OrderStore.currentAgent;
+  const agent = currentAgent;
+
+  // Load only own clients for this rep (big company - reps see only own)
+  useEffect(() => {
+    (async () => {
+      const { DatabaseEngine } = await import('./_DatabaseEngine');
+      const session = await DatabaseEngine.getSession();
+      if (session) {
+        setCurrentAgent({
+          name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name,
+          id: session.id,
+          role: 'Senior Field Officer',
+          territory: session.zone || session.territory || 'Ikeja Commercial Zone',
+          avatar: session.avatar || null,
+          initials: session.initials || (session.name?.substring(0,2) || 'FO').toUpperCase(),
+          email: session.email,
+        });
+        // Fetch only my clients
+        const myClients = await DatabaseEngine.getClientsByRep(session.id);
+        setMyClientsCount(myClients.length);
+        OrderStore.clients = myClients;
+      }
+    })();
+  }, []);
 
   // REAL GPS ON MOUNT
   useEffect(() => {

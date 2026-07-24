@@ -1,6 +1,6 @@
-// CHECKIN - WHITE PREMIUM ELEGANT, ZERO FAKE, FIXED TEXT ERROR
+// CHECKIN - BIG COMPANY VERSION: Reps see ONLY own clients (filtered by rep_id), Supabase source, white premium
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,17 +11,36 @@ import { DatabaseEngine } from './_DatabaseEngine';
 import SmartFooter from './SmartFooter';
 
 export default function CheckInScreen() {
-  const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [currentRep, setCurrentRep] = useState(null);
 
   useEffect(() => {
-    DatabaseEngine.getAllClients().then(data => {
-      const combined = [...OrderStore.clients, ...data];
+    (async () => {
+      setLoading(true);
+      const session = await DatabaseEngine.getSession();
+      setCurrentRep(session);
+      const repId = session?.id || session?.email || OrderStore.currentAgent?.id;
+
+      if (!repId || repId === 'REP-GUEST') {
+        // If no session, show empty and prompt login
+        setClients([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch ONLY clients created by this rep (big company multi-user)
+      const myClients = await DatabaseEngine.getClientsByRep(repId);
+      // Also merge with memory if any new just added
+      const memoryClients = OrderStore.clients.filter(c => c.rep_id === repId || c.createdByRepId === repId || !c.rep_id); // fallback for old data without rep_id
+      const combined = [...myClients, ...memoryClients];
       const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+      
       setClients(unique);
-      OrderStore.clients = unique;
-    });
+      OrderStore.clients = unique; // cache for this session
+      setLoading(false);
+    })();
   }, []);
 
   const filteredClients = clients.filter(c => 
@@ -40,11 +59,12 @@ export default function CheckInScreen() {
               id: client.id,
               name: client.name,
               address: client.address || 'Assigned Route',
-              creditLimit: client.creditLimit || '₦500,000',
+              creditLimit: client.creditLimit || client.credit_limit || '₦500,000',
               standing: client.standing || 'Good Standing 🟢',
-              gpsVerified: client.gpsVerified || 'Lat: 6.6018° N | Lon: 3.3515° E',
+              gpsVerified: client.gpsVerified || client.gps_coordinates || 'Lat: 6.6018° N | Lon: 3.3515° E',
               checkInPhotoTaken: false,
-              email: client.email || 'client@gmail.com',
+              email: client.email || client.registered_email || 'client@gmail.com',
+              rep_id: currentRep?.id,
             };
             router.push('/visit');
           }
@@ -54,7 +74,7 @@ export default function CheckInScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
+    <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
@@ -63,25 +83,29 @@ export default function CheckInScreen() {
             <Ionicons name="home-outline" size={16} color="#2563EB" />
             <Text style={styles.backText}> Home</Text>
           </TouchableOpacity>
-          <View style={styles.gpsBadge}>
-            <View style={styles.greenDot} />
-            <Text style={styles.gpsText}>GPS ±3m</Text>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>Rep: {currentRep?.id || OrderStore.currentAgent?.id || 'Unknown'}</Text>
           </View>
         </View>
 
-        <Text style={styles.mainTitle}>📍 Client Check-In</Text>
-        <Text style={styles.subText}>Select from your onboarded stores. Tap Check-In to verify GPS and take orders. Zero fake - only real clients you added.</Text>
+        <Text style={styles.mainTitle}>📍 My Clients</Text>
+        <Text style={styles.subText}>Big company mode: You see ONLY your own {clients.length} onboarded stores (filtered by rep_id = {currentRep?.id || 'your ID'}). Admin sees all {clients.length ? 'via Admin portal' : ''}. Zero fake.</Text>
 
         <View style={styles.searchWrapper}>
           <Ionicons name="search-outline" size={18} color="#94A3B8" />
-          <TextInput style={styles.searchInput} placeholder="Search store or territory..." placeholderTextColor="#94A3B8" value={searchQuery} onChangeText={setSearchQuery} />
+          <TextInput style={styles.searchInput} placeholder="Search my stores..." placeholderTextColor="#94A3B8" value={searchQuery} onChangeText={setSearchQuery} />
         </View>
 
-        {clients.length === 0 ? (
+        {loading ? (
+          <View style={styles.emptyBox}>
+            <ActivityIndicator color="#2563EB" />
+            <Text style={styles.emptySub}>Loading your clients from Supabase (filtered by your Rep ID)...</Text>
+          </View>
+        ) : clients.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={{ fontSize: 44 }}>🏬</Text>
-            <Text style={styles.emptyTitle}>No Clients Yet</Text>
-            <Text style={styles.emptySub}>Your directory starts 100% clean. Add your first real store to see it here and on the map.</Text>
+            <Text style={styles.emptyTitle}>No Clients Yet (Your Own)</Text>
+            <Text style={styles.emptySub}>You have onboarded 0 stores. Every new client you add goes to Supabase fshub_clients with your rep_id = {currentRep?.id || 'your ID'}, so you see only yours. Admin sees all.</Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/add-client')}>
               <Text style={styles.emptyBtnText}>➕ Onboard First Client</Text>
             </TouchableOpacity>
@@ -91,10 +115,10 @@ export default function CheckInScreen() {
             <View key={client.id} style={styles.clientCard}>
               <Text style={styles.clientName} numberOfLines={2}>{client.name}</Text>
               <Text style={styles.clientAddress} numberOfLines={2}>📍 {client.address}</Text>
-              <Text style={styles.clientOwner} numberOfLines={1}>📞 {client.owner || client.owner_contact || 'Store Manager'}</Text>
+              <Text style={styles.clientOwner} numberOfLines={1}>📞 {client.owner || client.owner_contact || 'Store Manager'} • Rep: {client.rep_id || client.created_by_rep_id || currentRep?.id}</Text>
               <View style={styles.timestampBox}>
-                <Text style={styles.timestampText}>🕒 Last Visited: {client.lastVisited || 'Just Onboarded'}</Text>
-                <Text style={styles.lastOrderText}>📦 Last Order: {client.lastOrderAmount || 'No previous orders'}</Text>
+                <Text style={styles.timestampText}>🕒 Last Visited: {client.lastVisited || client.created_at?.substring(0,10) || 'Just Onboarded'}</Text>
+                <Text style={styles.lastOrderText}>📦 Credit: {client.creditLimit || client.credit_limit || '₦500,000'}</Text>
               </View>
               <TouchableOpacity style={styles.checkInBtn} onPress={() => handleSelectClient(client)}>
                 <Ionicons name="location-outline" size={16} color="#FFF" />
@@ -117,9 +141,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   backBtn: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#DBEAFE', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, alignItems: 'center' },
   backText: { color: '#2563EB', fontSize: 12, fontWeight: '800', marginLeft: 4 },
-  gpsBadge: { flexDirection: 'row', backgroundColor: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: '#BBF7D0', alignItems: 'center', gap: 5 },
-  greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
-  gpsText: { color: '#059669', fontSize: 11, fontWeight: '800' },
+  badge: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  badgeText: { color: '#2563EB', fontSize: 10, fontWeight: '800' },
   mainTitle: { fontSize: 22, fontWeight: '900', color: '#1E3A8A', marginBottom: 4 },
   subText: { fontSize: 12, color: '#64748B', lineHeight: 17, marginBottom: 14 },
   searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 48, marginBottom: 16 },
