@@ -157,7 +157,7 @@ export default function AddClientScreen() {
     setIsSending(false);
 
     Alert.alert(
-      '🎉 Client Registered!', 
+      '🎉 Client Registered!',
       `${storeName} saved ${saveRes.success ? 'locally + cloud' : 'locally'}! ${emailResponse.success ? 'Welcome email sent to ' + storeEmail : 'Email failed: ' + emailResponse.message}`,
       [{ text: 'Go to Check-In', onPress: () => router.push('/checkin') }]
     );
@@ -173,7 +173,7 @@ export default function AddClientScreen() {
         </TouchableOpacity>
 
         <Text style={styles.title}>➕ Add New Client</Text>
-        <Text style={styles.sub}>White premium • Validated email • Saves to Supabase fshub_clients • Drops pin on map</Text>
+        <Text style={styles.sub}>Register a store with its contact and verified location.</Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>STORE NAME *</Text>

@@ -36,14 +36,14 @@ export default function CheckInScreen() {
       const memoryClients = OrderStore.clients.filter(c => c.rep_id === repId || c.createdByRepId === repId || !c.rep_id); // fallback for old data without rep_id
       const combined = [...myClients, ...memoryClients];
       const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-      
+
       setClients(unique);
       OrderStore.clients = unique; // cache for this session
       setLoading(false);
     })();
   }, []);
 
-  const filteredClients = clients.filter(c => 
+  const filteredClients = clients.filter(c =>
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (c.address && c.address.toLowerCase().includes(searchQuery.toLowerCase()))
   );
@@ -77,7 +77,7 @@ export default function CheckInScreen() {
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
             <Ionicons name="home-outline" size={16} color="#2563EB" />
@@ -89,7 +89,7 @@ export default function CheckInScreen() {
         </View>
 
         <Text style={styles.mainTitle}>📍 My Clients</Text>
-        <Text style={styles.subText}>Big company mode: You see ONLY your own {clients.length} onboarded stores (filtered by rep_id = {currentRep?.id || 'your ID'}). Admin sees all {clients.length ? 'via Admin portal' : ''}. Zero fake.</Text>
+        <Text style={styles.subText}>You are viewing your assigned clients. Select a store below to start a verified visit.</Text>
 
         <View style={styles.searchWrapper}>
           <Ionicons name="search-outline" size={18} color="#94A3B8" />
@@ -99,13 +99,13 @@ export default function CheckInScreen() {
         {loading ? (
           <View style={styles.emptyBox}>
             <ActivityIndicator color="#2563EB" />
-            <Text style={styles.emptySub}>Loading your clients from Supabase (filtered by your Rep ID)...</Text>
+            <Text style={styles.emptySub}>Loading your workspace...</Text>
           </View>
         ) : clients.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={{ fontSize: 44 }}>🏬</Text>
-            <Text style={styles.emptyTitle}>No Clients Yet (Your Own)</Text>
-            <Text style={styles.emptySub}>You have onboarded 0 stores. Every new client you add goes to Supabase fshub_clients with your rep_id = {currentRep?.id || 'your ID'}, so you see only yours. Admin sees all.</Text>
+            <Text style={styles.emptyTitle}>No Clients Found</Text>
+            <Text style={styles.emptySub}>Add your first client to begin planning visits, managing locations, and taking orders.</Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/add-client')}>
               <Text style={styles.emptyBtnText}>➕ Onboard First Client</Text>
             </TouchableOpacity>

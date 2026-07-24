@@ -129,7 +129,7 @@ export const DatabaseEngine = {
       const encodedEmail = encodeURIComponent(normalizedInput.toLowerCase());
       // Try OR filter for id or email
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?select=*&or=(id.eq.${encodedId},email.eq.${encodedEmail})`;
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
@@ -143,8 +143,8 @@ export const DatabaseEngine = {
       if (!reps || reps.length === 0) {
         // Try case-insensitive search by fetching all and filtering (fallback for big company if OR filter fails)
         const allReps = await this.getAllReps();
-        const foundFallback = allReps.find(r => 
-          r.id?.toLowerCase() === normalizedInput.toLowerCase() || 
+        const foundFallback = allReps.find(r =>
+          r.id?.toLowerCase() === normalizedInput.toLowerCase() ||
           r.email?.toLowerCase() === normalizedInput.toLowerCase()
         );
         if (!foundFallback) {
@@ -284,6 +284,22 @@ export const DatabaseEngine = {
     }
   },
 
+  _normalizeClients: function(clients) {
+    if (!clients) return [];
+    return clients.map(client => {
+      const lat = client.latitude !== undefined && client.latitude !== null ? Number(client.latitude) : null;
+      const lon = client.longitude !== undefined && client.longitude !== null ? Number(client.longitude) : null;
+      return {
+        ...client,
+        email: client.registered_email ?? client.email,
+        creditLimit: client.credit_limit ?? client.creditLimit,
+        businessType: client.business_type ?? client.businessType,
+        createdByRepId: client.created_by_rep_id ?? client.createdByRepId,
+        coordinate: (lat !== null && lon !== null) ? { latitude: lat, longitude: lon } : null
+      };
+    });
+  },
+
   getClientsByRep: async function(repId) {
     try {
       const encodedRepId = encodeURIComponent(repId);
@@ -292,18 +308,25 @@ export const DatabaseEngine = {
         method: 'GET',
         headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
       });
-      if (!response.ok) {
+      let clients = [];
+      if (response.ok) {
+        clients = await response.json();
+      } else {
         // Fallback: get all and filter client-side
         const fallbackUrl = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?select=*`;
         const fallbackRes = await fetch(fallbackUrl, { headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
-        if (!fallbackRes.ok) return [];
-        const allClients = await fallbackRes.json();
-        // Filter by rep_id if exists, else return all for backward compat
-        const filtered = allClients.filter(c => c.rep_id === repId || c.created_by_rep_id === repId);
-        return filtered.length > 0 ? filtered : allClients;
+        if (fallbackRes.ok) {
+          const allClients = await fallbackRes.json();
+          clients = allClients.filter(c => c.rep_id === repId || c.created_by_rep_id === repId);
+        }
       }
-      return await response.json();
-    } catch { return []; }
+      const normalized = this._normalizeClients(clients);
+      console.log(`[getClientsByRep] Rep ${repId}: ${normalized.length} client(s)`);
+      return normalized;
+    } catch (e) {
+      console.log('[getClientsByRep] Error', e.message);
+      return [];
+    }
   },
 
   getAllClients: async function() {
@@ -311,7 +334,8 @@ export const DatabaseEngine = {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?select=*`;
       const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
-      return await response.json();
+      const rawClients = await response.json();
+      return this._normalizeClients(rawClients);
     } catch { return []; }
   },
 
@@ -357,6 +381,56 @@ export const DatabaseEngine = {
         : { success: false, error: `Supabase error ${response.status}: ${text}` };
     } catch (e) {
       return { success: false, error: `Internet required: ${e.message}` };
+    }
+  },
+
+  updateCatalogProduct: async function(productId, updates) {
+    try {
+      const encodedId = encodeURIComponent(productId);
+      const payload = {};
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.category !== undefined) payload.category = updates.category;
+      if (updates.price !== undefined) payload.unit_price = Number(updates.price);
+      if (updates.stock !== undefined) payload.warehouse_stock = Number(updates.stock);
+      if (updates.barcode !== undefined) payload.barcode = updates.barcode;
+      if (updates.status !== undefined) payload.status = updates.status;
+
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?id=eq.${encodedId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+      });
+      const text = await response.text();
+      return response.ok
+        ? { success: true }
+        : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  deleteCatalogProduct: async function(productId) {
+    try {
+      const encodedId = encodeURIComponent(productId);
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?id=eq.${encodedId}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        }
+      });
+      const text = await response.text();
+      return response.ok
+        ? { success: true }
+        : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
     }
   },
 

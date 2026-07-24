@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert, Platform, Switch, ActivityIndicator 
+import {
+  StyleSheet, Text, View, ScrollView, TouchableOpacity,
+  TextInput, Alert, Platform, Switch, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -46,6 +46,7 @@ export default function AdminDashboardScreen() {
   const [newProdCategory, setNewProdCategory] = useState('⚡ Solar & Power');
   const [newProdPrice, setNewProdPrice] = useState('');
   const [newProdStock, setNewProdStock] = useState('50');
+  const [editingProductId, setEditingProductId] = useState(null);
 
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -138,8 +139,12 @@ export default function AdminDashboardScreen() {
             if (!isNaN(num)) {
               const res = await DatabaseEngine.updateProductStock(item.id, num);
               if (res.success) {
-                setCatalogItems(res.catalog);
-                Alert.alert('Stock Updated Live!', `"${item.name}" is now at ${num} units. Pushed to field reps automatically on their next sync.`);
+                const refreshedCatalog = await DatabaseEngine.getCatalog();
+                setCatalogItems(refreshedCatalog);
+                OrderStore.catalog = refreshedCatalog;
+                Alert.alert('Stock Updated Live!', `"${item.name}" is now at ${num} units. Pushed to field reps automatically.`);
+              } else {
+                Alert.alert('Stock Update Failed', res.error || 'Could not update stock.');
               }
             }
           }
@@ -150,7 +155,54 @@ export default function AdminDashboardScreen() {
     );
   };
 
-  const handleAddNewProductToCatalog = async () => {
+  const handleEditProduct = (item) => {
+    setEditingProductId(item.id);
+    setNewProdName(item.name);
+    setNewProdCategory(item.category);
+    setNewProdPrice(String(item.price));
+    setNewProdStock(String(item.stock));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingProductId(null);
+    setNewProdName('');
+    setNewProdCategory('⚡ Solar & Power');
+    setNewProdPrice('');
+    setNewProdStock('50');
+  };
+
+  const handleDeleteProduct = async (item) => {
+    Alert.alert(
+      'Delete Product?',
+      `Are you sure you want to permanently delete "${item.name}" from the catalog?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete 🗑️',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await DatabaseEngine.deleteCatalogProduct(item.id);
+            if (!res.success) {
+              Alert.alert('Product Deletion Failed', res.error || 'The product could not be deleted.');
+              return;
+            }
+
+            const refreshedCatalog = await DatabaseEngine.getCatalog();
+            setCatalogItems(refreshedCatalog);
+            OrderStore.catalog = refreshedCatalog;
+
+            if (editingProductId === item.id) {
+              handleCancelEdit();
+            }
+
+            Alert.alert('Deleted ✓', `"${item.name}" has been permanently removed.`);
+          }
+        }
+      ]
+    );
+  };
+
+  const handleSaveProduct = async () => {
     if (!newProdName.trim() || !newProdPrice.trim()) {
       Alert.alert('Missing Details ⚠️', 'Please provide at least a Product Name and Unit Price.');
       return;
@@ -158,37 +210,63 @@ export default function AdminDashboardScreen() {
 
     const priceNum = parseInt(newProdPrice.replace(/[^0-9]/g, ''), 10) || 0;
     const stockNum = parseInt(newProdStock, 10) || 0;
-    const newId = `PRD-${Math.floor(100 + Math.random() * 900)}`;
 
-    const newProduct = {
-      id: newId,
-      name: newProdName.trim(),
-      category: newProdCategory,
-      price: priceNum,
-      stock: stockNum,
-      barcode: `84019${Math.floor(100000 + Math.random()*900000)}`,
-      status: stockNum === 0 ? 'Out of Stock 🔴' : (stockNum < 10 ? 'Low Stock ⚠️' : 'High Stock 🟢'),
-      statusColor: stockNum === 0 ? '#EF4444' : (stockNum < 10 ? '#F59E0B' : '#10B981'),
-      description: `Official SFA product item created remotely from Headquarters Admin Portal on ${new Date().toLocaleDateString()}.`,
-    };
+    if (editingProductId) {
+      // Edit mode!
+      const res = await DatabaseEngine.updateCatalogProduct(editingProductId, {
+        name: newProdName.trim(),
+        category: newProdCategory,
+        price: priceNum,
+        stock: stockNum,
+      });
 
-    const res = await DatabaseEngine.addNewProductToCatalog(newProduct);
-    if (!res.success) {
-      Alert.alert('Product Save Failed', res.error || 'The product was not saved to Supabase.');
-      return;
+      if (!res.success) {
+        Alert.alert('Product Update Failed', res.error || 'The product could not be updated.');
+        return;
+      }
+
+      const refreshedCatalog = await DatabaseEngine.getCatalog();
+      setCatalogItems(refreshedCatalog);
+      OrderStore.catalog = refreshedCatalog;
+
+      handleCancelEdit();
+      Alert.alert('🎉 Product Updated!', 'Your changes have been saved to Supabase successfully.');
+    } else {
+      // Create mode!
+      const suffix = Math.floor(100 + Math.random() * 900);
+      const timestamp = Date.now().toString().slice(-6);
+      const newId = `PRD-${timestamp}-${suffix}`;
+
+      const newProduct = {
+        id: newId,
+        name: newProdName.trim(),
+        category: newProdCategory,
+        price: priceNum,
+        stock: stockNum,
+        barcode: `84019${Math.floor(100000 + Math.random()*900000)}`,
+        status: stockNum === 0 ? 'Out of Stock 🔴' : (stockNum < 10 ? 'Low Stock ⚠️' : 'High Stock 🟢'),
+        statusColor: stockNum === 0 ? '#EF4444' : (stockNum < 10 ? '#F59E0B' : '#10B981'),
+        description: `Official SFA product item created remotely from Headquarters Admin Portal on ${new Date().toLocaleDateString()}.`,
+      };
+
+      const res = await DatabaseEngine.addNewProductToCatalog(newProduct);
+      if (!res.success) {
+        Alert.alert('Product Save Failed', res.error || 'The product was not saved to Supabase.');
+        return;
+      }
+      const refreshedCatalog = await DatabaseEngine.getCatalog();
+      setCatalogItems(refreshedCatalog);
+      OrderStore.catalog = refreshedCatalog;
+
+      setNewProdName('');
+      setNewProdPrice('');
+      setNewProdStock('50');
+
+      Alert.alert(
+        '🎉 Catalog Item Created!',
+        `Added "${newProduct.name}" (₦${priceNum.toLocaleString()}) to your master warehouse catalog! Available to all field reps instantly upon sync.`
+      );
     }
-    const refreshedCatalog = await DatabaseEngine.getCatalog();
-    setCatalogItems(refreshedCatalog);
-    OrderStore.catalog = refreshedCatalog;
-
-    setNewProdName('');
-    setNewProdPrice('');
-    setNewProdStock('50');
-
-    Alert.alert(
-      '🎉 Catalog Item Created!',
-      `Added "${newProduct.name}" (₦${priceNum.toLocaleString()}) to your master warehouse catalog! Available to all field reps instantly upon sync.`
-    );
   };
 
   const handleAddNewAdmin = () => {
@@ -270,7 +348,7 @@ export default function AdminDashboardScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      
+
       {/* Admin Header */}
       <View style={[styles.headerBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerTopRow}>
@@ -296,7 +374,7 @@ export default function AdminDashboardScreen() {
             Primary Admin: <Text style={{fontWeight: '900', color: '#FFF'}}>Peter Patrick (peterpatrick@gmail.com)</Text>
           </Text>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.testSupabaseBtn, isTestingSupabase && { backgroundColor: '#475569' }]}
             onPress={handleTestSupabaseConnection}
             disabled={isTestingSupabase}
@@ -309,7 +387,7 @@ export default function AdminDashboardScreen() {
 
         {/* 4 Admin Tabs */}
         <View style={styles.tabBar}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabPill, activeTab === 'ORDERS' && { backgroundColor: colors.amber }]}
             onPress={() => setActiveTab('ORDERS')}
           >
@@ -318,7 +396,7 @@ export default function AdminDashboardScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabPill, activeTab === 'REPS' && { backgroundColor: colors.cyan }]}
             onPress={() => setActiveTab('REPS')}
           >
@@ -327,7 +405,7 @@ export default function AdminDashboardScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabPill, activeTab === 'CATALOG' && { backgroundColor: colors.green }]}
             onPress={() => setActiveTab('CATALOG')}
           >
@@ -336,7 +414,7 @@ export default function AdminDashboardScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabPill, activeTab === 'ADMINS' && { backgroundColor: colors.purple }]}
             onPress={() => setActiveTab('ADMINS')}
           >
@@ -348,7 +426,7 @@ export default function AdminDashboardScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         {/* TAB 1: LIVE INCOMING FIELD ORDERS */}
         {activeTab === 'ORDERS' && (
           <View>
@@ -387,7 +465,7 @@ export default function AdminDashboardScreen() {
                   </View>
 
                   {order.status === 'Pending Dispatch ⏳' && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.dispatchBtn}
                       onPress={() => handleApproveDispatch(order.id, order.store)}
                     >
@@ -415,7 +493,7 @@ export default function AdminDashboardScreen() {
                   <Text style={{ color: colors.green, fontSize: 13, marginTop: 4 }}>Tracking {activeReps.length} registered officers across territory</Text>
                 </View>
               ) : (
-                <MapView 
+                <MapView
                   style={styles.realMap}
                   initialRegion={{
                     latitude: 6.6018,
@@ -457,14 +535,16 @@ export default function AdminDashboardScreen() {
         {activeTab === 'CATALOG' && (
           <View>
             <Text style={[styles.sectionHeading, { color: colors.green }]}>
-              ➕ CREATE NEW WAREHOUSE CATALOG PRODUCT
+              {editingProductId ? '✏️ EDIT MASTER CATALOG PRODUCT' : '➕ CREATE NEW WAREHOUSE CATALOG PRODUCT'}
             </Text>
 
             <View style={[styles.adminCreatorCard, { backgroundColor: colors.card, borderColor: colors.green }]}>
-              <Text style={[styles.creatorHeader, { color: colors.green }]}>ADD NEW ITEM TO MASTER CATALOG</Text>
-              
+              <Text style={[styles.creatorHeader, { color: colors.green }]}>
+                {editingProductId ? `EDIT CATALOG PRODUCT (ID: ${editingProductId})` : 'ADD NEW ITEM TO MASTER CATALOG'}
+              </Text>
+
               <Text style={[styles.inputLabel, { color: colors.subText }]}>PRODUCT NAME *</Text>
-              <TextInput 
+              <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                 placeholder="e.g. Lithium Phosphate Battery (200Ah/12V)"
                 placeholderTextColor="#64748B"
@@ -475,7 +555,7 @@ export default function AdminDashboardScreen() {
               <Text style={[styles.inputLabel, { color: colors.subText }]}>PRODUCT CATEGORY *</Text>
               <View style={styles.pillRow}>
                 {['⚡ Solar & Power', '🌐 Networking', '🏪 Display'].map((cat, idx) => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     key={idx}
                     style={[styles.catSelectPill, newProdCategory === cat && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
                     onPress={() => setNewProdCategory(cat)}
@@ -488,7 +568,7 @@ export default function AdminDashboardScreen() {
               <View style={styles.rowGrid}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.inputLabel, { color: colors.subText }]}>UNIT PRICE (₦) *</Text>
-                  <TextInput 
+                  <TextInput
                     style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                     placeholder="e.g. 450000"
                     placeholderTextColor="#64748B"
@@ -499,7 +579,7 @@ export default function AdminDashboardScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.inputLabel, { color: colors.subText }]}>STARTING STOCK *</Text>
-                  <TextInput 
+                  <TextInput
                     style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                     placeholder="e.g. 50"
                     placeholderTextColor="#64748B"
@@ -510,9 +590,17 @@ export default function AdminDashboardScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity style={[styles.createAdminBtn, { backgroundColor: colors.green }]} onPress={handleAddNewProductToCatalog}>
-                <Text style={styles.createAdminBtnText}>⚡ ADD TO MASTER CATALOG ✓</Text>
+              <TouchableOpacity style={[styles.createAdminBtn, { backgroundColor: colors.green }]} onPress={handleSaveProduct}>
+                <Text style={styles.createAdminBtnText}>
+                  {editingProductId ? '⚡ UPDATE CATALOG PRODUCT ✓' : '⚡ ADD TO MASTER CATALOG ✓'}
+                </Text>
               </TouchableOpacity>
+
+              {editingProductId && (
+                <TouchableOpacity style={[styles.createAdminBtn, { backgroundColor: colors.red, marginTop: 8 }]} onPress={handleCancelEdit}>
+                  <Text style={styles.createAdminBtnText}>❌ CANCEL EDIT</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <Text style={[styles.sectionHeading, { color: colors.mainText, marginTop: 10 }]}>
@@ -541,12 +629,28 @@ export default function AdminDashboardScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity 
-                  style={styles.restockAdminBtn}
-                  onPress={() => handleRestockCatalogItem(item)}
-                >
-                  <Text style={styles.restockAdminText}>📥 REMOTELY UPDATE STOCK QUANTITY / RESTOCK ➔</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.smallAdminBtn, { backgroundColor: 'rgba(56, 189, 248, 0.15)', borderColor: '#38BDF8', borderWidth: 1 }]}
+                    onPress={() => handleRestockCatalogItem(item)}
+                  >
+                    <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: '700' }}>Update Stock</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.smallAdminBtn, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B', borderWidth: 1 }]}
+                    onPress={() => handleEditProduct(item)}
+                  >
+                    <Text style={{ color: '#F59E0B', fontSize: 11, fontWeight: '700' }}>Edit Product</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.smallAdminBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: '#EF4444', borderWidth: 1 }]}
+                    onPress={() => handleDeleteProduct(item)}
+                  >
+                    <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '700' }}>Delete Product</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </View>
@@ -561,9 +665,9 @@ export default function AdminDashboardScreen() {
 
             <View style={[styles.adminCreatorCard, { backgroundColor: colors.card, borderColor: colors.purple }]}>
               <Text style={[styles.creatorHeader, { color: colors.purple }]}>➕ ONBOARD NEW HEADQUARTERS ADMINISTRATOR</Text>
-              
+
               <Text style={[styles.inputLabel, { color: colors.subText }]}>NEW ADMIN FULL NAME *</Text>
-              <TextInput 
+              <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                 placeholder="e.g. Mr. Adewale"
                 placeholderTextColor="#64748B"
@@ -572,7 +676,7 @@ export default function AdminDashboardScreen() {
               />
 
               <Text style={[styles.inputLabel, { color: colors.subText }]}>OFFICIAL GMAIL / WORK EMAIL *</Text>
-              <TextInput 
+              <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                 placeholder="e.g. adewale@fshub.ng"
                 placeholderTextColor="#64748B"
@@ -583,7 +687,7 @@ export default function AdminDashboardScreen() {
               />
 
               <Text style={[styles.inputLabel, { color: colors.subText }]}>CREATE 4-DIGIT SECURITY PIN *</Text>
-              <TextInput 
+              <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
                 placeholder="e.g. 2049"
                 placeholderTextColor="#64748B"
@@ -599,9 +703,9 @@ export default function AdminDashboardScreen() {
                   <Text style={[styles.switchLabel, { color: colors.mainText }]}>Grant Super Admin Status ⭐</Text>
                   <Text style={[styles.switchSub, { color: colors.subText }]}>Allows adding/revoking other admins (cannot remove Primary Admin)</Text>
                 </View>
-                <Switch 
-                  value={isSuperToggle} 
-                  onValueChange={setIsSuperToggle} 
+                <Switch
+                  value={isSuperToggle}
+                  onValueChange={setIsSuperToggle}
                   trackColor={{ false: '#334155', true: '#A855F7' }}
                   thumbColor="#FFFFFF"
                 />
@@ -618,7 +722,7 @@ export default function AdminDashboardScreen() {
 
             {adminList.map((adm) => (
               <View key={adm.id} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: adm.statusColor, borderLeftWidth: 6 }]}>
-                
+
                 <View style={styles.cardTopRow}>
                   <Text style={[styles.storeTitle, { color: colors.mainText, flex: 1 }]} numberOfLines={1}>{adm.name}</Text>
                   <View style={[styles.statusBadge, { borderColor: adm.statusColor }]}>
@@ -636,7 +740,7 @@ export default function AdminDashboardScreen() {
                   </View>
                 ) : (
                   <View style={[styles.amountRow, { borderTopColor: colors.border, marginBottom: 0, paddingTop: 12 }]}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.roleToggleBtn, { borderColor: adm.isSuper ? colors.amber : colors.cyan }]}
                       onPress={() => handleToggleSuperAdmin(adm)}
                     >
@@ -645,7 +749,7 @@ export default function AdminDashboardScreen() {
                       </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.revokeBtn}
                       onPress={() => handleRevokeAdmin(adm)}
                     >
@@ -984,5 +1088,12 @@ const styles = StyleSheet.create({
   emptySub: {
     fontSize: 12,
     textAlign: 'center',
+  },
+  smallAdminBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

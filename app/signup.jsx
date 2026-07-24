@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupScreen() {
   const { isDark, colors } = useTheme();
-  
+
   const [fullName, setFullName] = useState('');
   // Keep this empty: a shared prefilled ID (formerly REP-2050) caused every
   // subsequent signup to collide with the first account's primary key.
@@ -97,7 +97,7 @@ export default function SignupScreen() {
     // Save to Supabase FIRST - must succeed, otherwise show real error
     console.log('[Signup] Attempting to backup to Supabase...', newOfficerProfile.id);
     const saveRes = await DatabaseEngine.saveNewRep(newOfficerProfile);
-    
+
     if (!saveRes.success) {
       console.log('[Signup] Supabase save FAILED:', saveRes.error);
       setIsLoading(false);
@@ -115,14 +115,14 @@ export default function SignupScreen() {
     OrderStore.addNewRep({ ...newOfficerProfile, isCurrent: true });
     OrderStore.setCurrentAgent(newOfficerProfile);
     await DatabaseEngine.saveSession(newOfficerProfile);
-    
+
     const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: gmail.trim() });
     setIsLoading(false);
 
     if (res.success) {
-      Alert.alert('🎉 Officer Registered & Backed Up to Supabase!', `Welcome ${fullName.trim()}!\n\n✅ Saved to Supabase fshub_reps table\n✅ Admin will now see you\n✅ Confirmation email sent to ${gmail.trim()}\n\nNow go to Supabase Table Editor -> fshub_reps -> you will see ${repId.trim()} row!`, [{ text: 'Proceed to Home 🚀', onPress: () => router.replace('/home') }]);
+      Alert.alert('🎉 Registration Successful!', `Welcome ${fullName.trim()}!\n\nYour representative account has been successfully created, and a confirmation email has been sent to ${gmail.trim()}.`, [{ text: 'Proceed to Home 🚀', onPress: () => router.replace('/home') }]);
     } else {
-      Alert.alert('Registered & Backed Up (Email Notice)', `Account saved to Supabase ✅ but email failed: ${res.message}\n\nCheck Supabase fshub_reps - you should see ${repId.trim()} row.`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
+      Alert.alert('Registration Successful', `Your account has been created, but the confirmation email could not be sent: ${res.message}`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
     }
   };
 

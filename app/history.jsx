@@ -79,7 +79,7 @@ export default function HistoryScreen() {
         </View>
 
         <Text style={styles.mainTitle}>📜 My Order History</Text>
-        <Text style={styles.subText}>Big company: You see ONLY your own orders (filtered by your Rep ID). Admin sees all via Admin portal. Zero fake data.</Text>
+        <Text style={styles.subText}>Review and track your previously submitted orders and field activity logs.</Text>
 
         <View style={styles.searchWrapper}>
           <Ionicons name="search-outline" size={18} color="#94A3B8" />
