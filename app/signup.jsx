@@ -86,18 +86,35 @@ export default function SignupScreen() {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to central memory and set as current agent
+    // Save to Supabase FIRST - must succeed, otherwise show real error
+    console.log('[Signup] Attempting to backup to Supabase...', newOfficerProfile.id);
+    const saveRes = await DatabaseEngine.saveNewRep(newOfficerProfile);
+    
+    if (!saveRes.success) {
+      console.log('[Signup] Supabase save FAILED:', saveRes.error);
+      setIsLoading(false);
+      Alert.alert(
+        '❌ Database Save Failed - Account NOT Backed Up!',
+        `Your account was NOT saved to Supabase cloud. Admin will see 0 reps.\n\nError: ${saveRes.error}\n\nFix:\n1. Go to Supabase SQL Editor\n2. Run SUPABASE_ADD_MISSING_COLUMNS.sql (adds password column)\n3. Then try signup again with NEW Rep ID (old email may be duplicate)\n\nDetails: ${saveRes.error}`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    console.log('[Signup] Supabase save SUCCESS - Rep backed up to cloud ✅');
+
+    // Only if DB save succeeded, save to memory and session
     OrderStore.addNewRep({ ...newOfficerProfile, isCurrent: true });
     OrderStore.setCurrentAgent(newOfficerProfile);
-    const saveRes = await DatabaseEngine.saveNewRep(newOfficerProfile);
     await DatabaseEngine.saveSession(newOfficerProfile);
+    
     const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: gmail.trim() });
     setIsLoading(false);
 
     if (res.success) {
-      Alert.alert('🎉 Officer Registered!', `Welcome ${fullName.trim()}! Confirmation sent to ${gmail.trim()}`, [{ text: 'Proceed 🚀', onPress: () => router.replace('/home') }]);
+      Alert.alert('🎉 Officer Registered & Backed Up to Supabase!', `Welcome ${fullName.trim()}!\n\n✅ Saved to Supabase fshub_reps table\n✅ Admin will now see you\n✅ Confirmation email sent to ${gmail.trim()}\n\nNow go to Supabase Table Editor -> fshub_reps -> you will see ${repId.trim()} row!`, [{ text: 'Proceed to Home 🚀', onPress: () => router.replace('/home') }]);
     } else {
-      Alert.alert('Registered (Email Notice)', `Account created but email failed: ${res.message}`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
+      Alert.alert('Registered & Backed Up (Email Notice)', `Account saved to Supabase ✅ but email failed: ${res.message}\n\nCheck Supabase fshub_reps - you should see ${repId.trim()} row.`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
     }
   };
 
