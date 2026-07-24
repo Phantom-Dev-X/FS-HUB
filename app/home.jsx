@@ -1,7 +1,6 @@
-// HOME - NEW LAYOUT like home-white-elegant-new-layout-mockup.png (3 phones version you like)
-// White elegant premium, shows agent TB header, 245 clients stats, live radar, daily actions 18
+// HOME - FINAL CLEAN ZERO FAKE - NO DUMMY 245, NO FAKE NUMBERS - REAL DATA ONLY FROM SUPABASE
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, Image } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -23,18 +22,20 @@ if (Platform.OS !== 'web') {
 }
 
 export default function DashboardScreen() {
-  const { colors } = useTheme(); // will be white since default isDark false
+  const { colors } = useTheme();
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
-  const [locationStatus, setLocationStatus] = useState('Excellent');
+  const [locationStatus, setLocationStatus] = useState('Checking GPS...');
   const [myClientsCount, setMyClientsCount] = useState(0);
   const [offlineCount, setOfflineCount] = useState(0);
+  const [myOrdersCount, setMyOrdersCount] = useState(0);
   const [agent, setAgent] = useState(OrderStore.currentAgent);
+  const [loading, setLoading] = useState(true);
 
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
 
   useEffect(() => {
     (async () => {
-      // GPS
+      setLoading(true);
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -43,33 +44,45 @@ export default function DashboardScreen() {
           OrderStore.repLocation = { latitude, longitude };
           RouteStore.repLocation = { latitude, longitude };
           setRepCoordinates({ latitude, longitude });
-          setLocationStatus('Excellent');
+          setLocationStatus('GPS Active 🟢');
         } else {
-          setLocationStatus('Baseline');
+          setLocationStatus('Permission Denied');
         }
       } catch { setLocationStatus('Ready'); }
 
-      // Session + My Clients (big company - only own)
-      const session = await DatabaseEngine.getSession();
-      if (session) {
-        setAgent({
-          name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name,
-          id: session.id,
-          role: 'Senior Field Officer',
-          territory: session.zone || session.territory || 'Ikeja Commercial Zone',
-          initials: session.initials || session.name?.substring(0,2).toUpperCase() || 'TB',
-          avatar: session.avatar || null,
-        });
-        const myClients = await DatabaseEngine.getClientsByRep(session.id);
-        setMyClientsCount(myClients.length);
-        OrderStore.clients = myClients;
-      } else {
-        setMyClientsCount(OrderStore.clients.length);
-      }
+      try {
+        const session = await DatabaseEngine.getSession();
+        if (session) {
+          setAgent({
+            name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name || 'Field Officer',
+            id: session.id,
+            role: 'Field Officer',
+            territory: session.zone || session.territory || 'Ikeja Commercial Zone',
+            initials: session.initials || session.name?.substring(0,2).toUpperCase() || 'FO',
+            avatar: session.avatar || null,
+            email: session.email,
+          });
 
-      // Offline orders count for Sync badge
-      const offline = await DatabaseEngine.getOfflineOrders();
-      setOfflineCount(offline.length);
+          // Fetch ONLY my clients from Supabase (big company - reps see only own)
+          const myClients = await DatabaseEngine.getClientsByRep(session.id);
+          setMyClientsCount(myClients.length);
+          OrderStore.clients = myClients;
+
+          // Fetch ONLY my orders from Supabase
+          const myOrders = await DatabaseEngine.getOrdersByRep(session.id);
+          setMyOrdersCount(myOrders.length);
+
+          // Offline orders count
+          const offline = await DatabaseEngine.getOfflineOrders();
+          setOfflineCount(offline.length);
+        } else {
+          setMyClientsCount(0);
+          setMyOrdersCount(0);
+        }
+      } catch (e) {
+        console.log('Home load error', e.message);
+      }
+      setLoading(false);
     })();
   }, []);
 
@@ -84,10 +97,9 @@ export default function DashboardScreen() {
     return (
       <View style={styles.avatarWrapper}>
         <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{agent?.initials || 'TB'}</Text>
+          <Text style={styles.avatarText}>{agent?.initials || 'FO'}</Text>
         </View>
         <View style={styles.greenDotTop} />
-        <View style={styles.greenDotBottom} />
       </View>
     );
   };
@@ -98,14 +110,13 @@ export default function DashboardScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
-        {/* AGENT HEADER - Like mockup */}
+        {/* AGENT HEADER - REAL DATA ONLY */}
         <View style={styles.agentHeader}>
           <View style={styles.agentRow}>
             {renderAvatar()}
             <View style={styles.agentInfo}>
-              <Text style={styles.agentName} numberOfLines={1}>{agent?.name || 'Tunde Balogun'}</Text>
-              <Text style={styles.agentRole} numberOfLines={1}>Senior Field Officer • {agent?.id || 'REP-2049'}</Text>
-              <Text style={styles.agentTerritory} numberOfLines={1}>{agent?.territory || 'Ikeja Commercial Zone'}</Text>
+              <Text style={styles.agentName} numberOfLines={1}>{agent?.name || 'Guest Officer'}</Text>
+              <Text style={styles.agentRole} numberOfLines={1}>{agent?.id ? `${agent.id} • ${agent.territory}` : 'No session - Please login'}</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/profile')} style={styles.gearBtn}>
               <Ionicons name="settings-outline" size={20} color="#64748B" />
@@ -113,132 +124,130 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* DASHBOARD TITLE */}
+        {/* DASHBOARD TITLE - REAL COUNTS ONLY, NO FAKE 245 */}
         <Text style={styles.dashboardTitle}>FS HUB DASHBOARD</Text>
-        <Text style={styles.dashboardSub}>{myClientsCount || 245} Registered Clients • GPS Status: {locationStatus}</Text>
+        <Text style={styles.dashboardSub}>
+          {loading ? 'Loading your real data from Supabase...' : `${myClientsCount} clients you onboarded • ${myOrdersCount} orders you took • GPS: ${locationStatus}`}
+        </Text>
 
-        {/* 2x2 STATS GRID - Like mockup */}
+        {/* 2x2 STATS GRID - REAL DATA ONLY, NO DUMMY +18% OR 245 */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={styles.statTopRow}>
               <View style={styles.statIconBox}><Ionicons name="people" size={18} color="#2563EB" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>Clients</Text>
-                <Text style={styles.statNumber}>{myClientsCount || 245}</Text>
-                <Text style={styles.statExtra}>+18%</Text>
+                <Text style={styles.statLabel}>My Clients</Text>
+                <Text style={styles.statNumber}>{myClientsCount}</Text>
+                <Text style={styles.statExtra}>{myClientsCount === 0 ? 'No clients yet' : 'Real from Supabase'}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.statCard}>
             <View style={styles.statTopRow}>
-              <View style={styles.statIconBox}><Ionicons name="cart" size={18} color="#2563EB" /></View>
+              <View style={styles.statIconBox}><Ionicons name="cart" size={18} color="#10B981" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>Active Cart Units</Text>
-                <Text style={styles.statNumber}>{totalUnits || 78}</Text>
-                <Text style={styles.statExtraMuted}>{totalUnits ? `${totalUnits} units` : '12 Pending'}</Text>
+                <Text style={styles.statLabel}>Active Cart</Text>
+                <Text style={styles.statNumber}>{totalUnits}</Text>
+                <Text style={styles.statExtraMuted}>{totalUnits === 0 ? 'Empty cart' : `${totalUnits} units`}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.statCard}>
             <View style={styles.statTopRow}>
-              <View style={styles.statIconBox}><Ionicons name="cash" size={18} color="#2563EB" /></View>
+              <View style={styles.statIconBox}><Ionicons name="wallet" size={18} color="#059669" /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.statLabel}>Order Value</Text>
-                <Text style={styles.statNumber}>₦{(grandTotal || 1850300).toLocaleString()}</Text>
-                <Text style={styles.statExtraMuted}>Today</Text>
+                <Text style={styles.statNumber}>₦{grandTotal.toLocaleString()}</Text>
+                <Text style={styles.statExtraMuted}>{grandTotal === 0 ? '₦0' : 'Cart total'}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.statCard}>
             <View style={styles.statTopRow}>
-              <View style={styles.statIconBox}><Ionicons name="location" size={18} color="#2563EB" /></View>
+              <View style={styles.statIconBox}><Ionicons name="sync" size={18} color="#F59E0B" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>GPS Precision</Text>
-                <Text style={styles.statNumber}>5 Meters</Text>
-                <Text style={styles.statExtraMuted}>Reliable</Text>
+                <Text style={styles.statLabel}>Offline Orders</Text>
+                <Text style={styles.statNumber}>{offlineCount}</Text>
+                <Text style={styles.statExtraMuted}>{offlineCount === 0 ? 'All synced' : 'Pending sync'}</Text>
               </View>
             </View>
           </View>
         </View>
 
-        {/* LIVE TERRITORY RADAR - Like mockup */}
+        {/* LIVE TERRITORY RADAR */}
         <View style={styles.radarCard}>
-          <Text style={styles.radarTitle}>Live Territory Radar</Text>
+          <Text style={styles.radarTitle}>Live Territory Radar - Your Clients Only</Text>
+          <Text style={styles.radarSub}>Blue = You • Red = Your {myClientsCount} clients • From Supabase filtered by your Rep ID</Text>
           <View style={styles.mapWrapper}>
             {Platform.OS === 'web' || !MapView ? (
               <View style={styles.webMapFallback}>
-                <View style={styles.mapPinkDot} />
-                <View style={styles.mapBlueDot} />
-                <View style={styles.mapOrangeDot} />
-                <View style={styles.mapCenterTB}>
-                  <Text style={styles.mapCenterText}>TB</Text>
-                </View>
-                <Text style={styles.mapIkejaLabel}>Ikeja</Text>
-                <View style={styles.mapLegend}>
-                  <Text style={styles.legendTitle}>Ikeja Zone</Text>
-                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#0EA5E9' }]} /><Text style={styles.legendText}>3 clients</Text></View>
-                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendText}>1 pending</Text></View>
-                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} /><Text style={styles.legendText}>1 agent location</Text></View>
-                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#E2E8F0' }]} /><Text style={styles.legendText}>Radius</Text></View>
-                  <Text style={styles.viewFullMap}>View Full Map</Text>
-                </View>
+                <Ionicons name="map-outline" size={32} color="#2563EB" />
+                <Text style={styles.webMapTitle}>Your Territory Map</Text>
+                <Text style={styles.webMapSub}>Lat {repCoords.latitude.toFixed(4)} | Lon {repCoords.longitude.toFixed(4)}</Text>
+                <Text style={styles.webMapSmall}>Shows only {myClientsCount} clients you onboarded (rep_id = {agent?.id || 'your ID'}) - Admin sees all</Text>
+                <TouchableOpacity style={styles.viewMapBtn} onPress={() => router.push('/territories')}>
+                  <Text style={styles.viewMapText}>View Full Map →</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              <MapView style={styles.realMap} initialRegion={currentRegion} showsUserLocation={true}>
-                <Marker coordinate={repCoords} title="Your Position" pinColor="blue" />
-                {OrderStore.clients.map(store => (
-                  <Marker key={store.id} coordinate={store.coordinate || repCoords} title={store.name} pinColor="red" />
+              <MapView style={styles.realMap} initialRegion={currentRegion} showsUserLocation={true} showsMyLocationButton={true}>
+                <Marker coordinate={repCoords} title="Your Position" description={locationStatus} pinColor="blue" />
+                {OrderStore.clients.slice(0, 50).map(store => (
+                  <Marker key={store.id} coordinate={store.coordinate || repCoords} title={store.name} description={store.address} pinColor="red" />
                 ))}
               </MapView>
             )}
           </View>
         </View>
 
-        {/* DAILY FIELD ACTIONS */}
-        <View style={styles.actionsHeader}>
-          <Text style={styles.actionsTitle}>Daily Field Actions</Text>
-          <Text style={styles.actionsCount}>18</Text>
-        </View>
+        {/* ZERO FAKE BANNER */}
+        {myClientsCount === 0 && !loading && (
+          <View style={styles.cleanBanner}>
+            <Ionicons name="rocket-outline" size={24} color="#10B981" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.cleanTitle}>Clean Production - Zero Fake Data</Text>
+              <Text style={styles.cleanSub}>No dummy 245 clients. You have {myClientsCount} real clients from Supabase. Tap Add New Client to onboard first real store - it will backup to Supabase instantly and admin will see it.</Text>
+            </View>
+          </View>
+        )}
+
+        <Text style={styles.sectionHeading}>DAILY FIELD ACTIONS - REAL</Text>
 
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/checkin')}>
-          <View style={styles.actionIconBox}><Ionicons name="location" size={20} color="#2563EB" /></View>
-          <View style={styles.actionTextBox}>
-            <Text style={styles.actionName}>Client Check-In</Text>
-            <Text style={styles.actionSub}>Check-in at Client Site</Text>
-            <Text style={styles.actionSmall}>24 visits logged</Text>
+          <View style={styles.actionIconBox}><Ionicons name="location-outline" size={22} color="#2563EB" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>Client Check-In ({myClientsCount})</Text>
+            <Text style={styles.actionSub}>Select from your {myClientsCount} real clients only</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/add-client')}>
-          <View style={styles.actionIconBox}><Ionicons name="person-add" size={20} color="#2563EB" /></View>
-          <View style={styles.actionTextBox}>
-            <Text style={styles.actionName}>Add New Client</Text>
-            <Text style={styles.actionSub}>Register New Client</Text>
-            <Text style={styles.actionSmall}>3 onboarded today</Text>
+          <View style={styles.actionIconBox}><Ionicons name="person-add-outline" size={22} color="#10B981" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>Add New Client</Text>
+            <Text style={styles.actionSub}>Onboard store → Saves to Supabase fshub_clients with your rep_id</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/territories')}>
-          <View style={styles.actionIconBox}><Ionicons name="people" size={20} color="#2563EB" /></View>
-          <View style={styles.actionTextBox}>
-            <Text style={styles.actionName}>Client List</Text>
-            <Text style={styles.actionSub}>View All Clients</Text>
-            <Text style={styles.actionSmall}>{myClientsCount || 245} total</Text>
+          <View style={styles.actionIconBox}><Ionicons name="map-outline" size={22} color="#F59E0B" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>My Territories Map</Text>
+            <Text style={styles.actionSub}>View map of only your {myClientsCount} clients</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/sync')}>
-          <View style={styles.actionIconBox}><Ionicons name="sync" size={20} color="#2563EB" /></View>
-          <View style={styles.actionTextBox}>
-            <Text style={styles.actionName}>Sync Offline Orders</Text>
-            <Text style={styles.actionSub}>Sync offline data</Text>
-            <Text style={styles.actionSmall}>{offlineCount || 3} pending orders</Text>
+          <View style={styles.actionIconBox}><Ionicons name="sync-outline" size={22} color="#A855F7" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>Sync Offline Orders ({offlineCount})</Text>
+            <Text style={styles.actionSub}>Push offline orders to Supabase, then wipe local queue</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
@@ -252,54 +261,45 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 280 },
   scrollContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 90 },
   agentHeader: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
   agentRow: { flexDirection: 'row', alignItems: 'center' },
   avatarWrapper: { marginRight: 12 },
   avatarCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E3A8A', justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
-  greenDotTop: { position: 'absolute', top: 2, right: 2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#FFFFFF' },
-  greenDotBottom: { position: 'absolute', bottom: 2, right: 2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#FFFFFF' },
+  greenDotTop: { position: 'absolute', top: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#FFFFFF' },
   agentInfo: { flex: 1 },
   agentName: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  agentRole: { fontSize: 12, color: '#334155', marginTop: 1 },
-  agentTerritory: { fontSize: 11, color: '#64748B', marginTop: 1 },
+  agentRole: { fontSize: 11, color: '#334155', marginTop: 1 },
   gearBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   dashboardTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', letterSpacing: 0.3 },
-  dashboardSub: { fontSize: 12, color: '#64748B', marginTop: 2, marginBottom: 14 },
+  dashboardSub: { fontSize: 11, color: '#64748B', marginTop: 2, marginBottom: 14, lineHeight: 16 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10, marginBottom: 16 },
   statCard: { width: '48%', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 14, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
   statTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   statIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
   statLabel: { fontSize: 11, color: '#334155', fontWeight: '600' },
-  statNumber: { fontSize: 18, fontWeight: '900', color: '#0F172A', marginTop: 2 },
-  statExtra: { fontSize: 11, color: '#10B981', fontWeight: '700', marginTop: 2 },
-  statExtraMuted: { fontSize: 11, color: '#64748B', marginTop: 2 },
-  radarCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 14, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
-  radarTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A', marginBottom: 10 },
+  statNumber: { fontSize: 20, fontWeight: '900', color: '#0F172A', marginTop: 2 },
+  statExtra: { fontSize: 11, color: '#10B981', fontWeight: '600', marginTop: 2 },
+  statExtraMuted: { fontSize: 11, color: '#94A3B8', marginTop: 2 },
+  radarCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 14, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
+  radarTitle: { fontSize: 13, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
+  radarSub: { fontSize: 10, color: '#64748B', marginBottom: 8 },
   mapWrapper: { height: 180, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
-  webMapFallback: { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
-  mapIkejaLabel: { position: 'absolute', left: 10, top: 10, fontSize: 12, color: '#64748B' },
-  mapPinkDot: { position: 'absolute', left: 40, top: 40, width: 16, height: 16, borderRadius: 8, backgroundColor: '#F59E0B' },
-  mapBlueDot: { position: 'absolute', right: 60, top: 30, width: 16, height: 16, borderRadius: 8, backgroundColor: '#2563EB' },
-  mapOrangeDot: { position: 'absolute', right: 30, bottom: 50, width: 16, height: 16, borderRadius: 8, backgroundColor: '#EF4444' },
-  mapCenterTB: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1E3A8A', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#BFDBFE' },
-  mapCenterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
-  mapLegend: { position: 'absolute', right: 10, top: 10, backgroundColor: '#FFFFFF', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#E2E8F0', width: 110 },
-  legendTitle: { fontSize: 10, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
-  legendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  legendText: { fontSize: 9, color: '#64748B' },
-  viewFullMap: { fontSize: 10, color: '#2563EB', fontWeight: '700', marginTop: 6, textAlign: 'center' },
+  webMapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
+  webMapTitle: { fontSize: 14, fontWeight: '800', color: '#1E3A8A', marginTop: 8 },
+  webMapSub: { fontSize: 12, color: '#059669', marginTop: 4 },
+  webMapSmall: { fontSize: 10, color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 14 },
+  viewMapBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 10 },
+  viewMapText: { color: '#2563EB', fontSize: 11, fontWeight: '800' },
   realMap: { width: '100%', height: '100%' },
-  actionsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  actionsTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
-  actionsCount: { fontSize: 12, color: '#64748B', backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  cleanBanner: { flexDirection: 'row', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 14, padding: 14, marginBottom: 16, alignItems: 'flex-start' },
+  cleanTitle: { fontSize: 13, fontWeight: '900', color: '#065F46' },
+  cleanSub: { fontSize: 11, color: '#047857', lineHeight: 16, marginTop: 2 },
+  sectionHeading: { fontSize: 12, fontWeight: '800', color: '#0F172A', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
   actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4, elevation: 1 },
   actionIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  actionTextBox: { flex: 1 },
-  actionName: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
-  actionSub: { fontSize: 11, color: '#334155', marginTop: 1 },
-  actionSmall: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  actionTitle: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  actionSub: { fontSize: 11, color: '#64748B', marginTop: 1, lineHeight: 14 },
 });
