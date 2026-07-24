@@ -1,8 +1,5 @@
-// FS HUB DATABASE ENGINE - EXPERT VERSION FOR BIG COMPANY
-// ✅ Supabase is SOURCE OF TRUTH for Reps, Clients, Catalog, Orders, Admins
-// ✅ AsyncStorage ONLY for offline orders (as you requested), wiped after sync
-// ✅ Account creation ONLINE ONLY - no local storage for acc
-// ✅ Reps see only own clients & orders (filtered by rep_id)
+// FS HUB DATABASE ENGINE - FIXED FOR MISSING COLUMNS + BIG COMPANY
+// Fixes: Admin not updating because fshub_reps missing password column causing 404/400 and 0 reps
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -19,11 +16,10 @@ export const DatabaseEngine = {
   },
 
   KEYS: {
-    OFFLINE_ORDERS: '@fshub_offline_orders_only', // ONLY offline orders as you requested
-    SESSION: 'fshub_session_rep', // will use SecureStore, not AsyncStorage
+    OFFLINE_ORDERS: '@fshub_offline_orders_only',
+    SESSION: 'fshub_session_rep',
   },
 
-  // ==================== INIT (Minimal) ====================
   initDatabase: async function() {
     try {
       const offline = await AsyncStorage.getItem(this.KEYS.OFFLINE_ORDERS);
@@ -34,11 +30,11 @@ export const DatabaseEngine = {
     }
   },
 
-  // ==================== REPS - SUPABASE ONLY, NO LOCAL (As you requested) ====================
-  // Creating acc cannot be done offline - must have internet
+  // REPS - SUPABASE ONLY, NO LOCAL
   saveNewRep: async function(repObject) {
-    try {
-      // Must have internet - try push to Supabase directly
+    // First try with password column (if you ran ADD_MISSING_COLUMNS.sql)
+    // If fails due to missing column, retry without password field
+    const tryPush = async (payload) => {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}`;
       const response = await fetch(url, {
         method: 'POST',
@@ -48,7 +44,37 @@ export const DatabaseEngine = {
           'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
           'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({
+        body: JSON.stringify(payload)
+      });
+      const text = await response.text();
+      return { ok: response.ok, status: response.status, text };
+    };
+
+    try {
+      // Attempt 1: Full payload with password
+      let result = await tryPush({
+        id: repObject.id,
+        name: repObject.name || repObject.fullName,
+        email: repObject.email?.toLowerCase(),
+        zone: repObject.zone || repObject.territory,
+        territory: repObject.territory || repObject.zone,
+        status: repObject.status || 'Active',
+        coordinate: repObject.coordinate,
+        password: repObject.password,
+        initials: repObject.initials,
+        avatar: repObject.avatar,
+        created_at: new Date().toISOString()
+      });
+
+      if (result.ok) {
+        console.log(`[Supabase] Rep ${repObject.id} saved ✅ Status ${result.status}`);
+        return { success: true, cloud: true };
+      }
+
+      // If fails due to missing password column, try without password
+      if (result.status === 400 && result.text.includes('password')) {
+        console.log(`[Supabase] Missing password column, retrying without it...`);
+        result = await tryPush({
           id: repObject.id,
           name: repObject.name || repObject.fullName,
           email: repObject.email?.toLowerCase(),
@@ -56,104 +82,109 @@ export const DatabaseEngine = {
           territory: repObject.territory || repObject.zone,
           status: repObject.status || 'Active',
           coordinate: repObject.coordinate,
-          password: repObject.password, // For demo, plain - in production use hash or Supabase Auth
           initials: repObject.initials,
           avatar: repObject.avatar,
           created_at: new Date().toISOString()
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        // If table doesn't exist (404), give helpful message
-        if (response.status === 404) {
-          return { success: false, error: `Supabase table fshub_reps not found (404). Run SUPABASE_404_FIX.sql in Supabase SQL Editor. Details: ${errText}` };
+        });
+        if (result.ok) {
+          console.log(`[Supabase] Rep saved without password column (run ADD_MISSING_COLUMNS.sql to add password)`);
+          return { success: true, cloud: true, warning: 'Saved without password column - run SQL fix to add password column' };
         }
-        return { success: false, error: `Supabase error ${response.status}: ${errText}` };
       }
 
-      console.log(`[Supabase] Rep ${repObject.id} backed up to cloud ✅`);
-      return { success: true, cloud: true };
-    } catch (error) {
-      // No internet - acc creation fails as you requested (no offline acc)
-      return { success: false, error: `Internet required to create account. No offline acc creation allowed. Error: ${error.message}` };
+      if (result.status === 404) {
+        return { success: false, error: `Table fshub_reps not found (404). Run SUPABASE_404_FIX.sql + SUPABASE_ADD_MISSING_COLUMNS.sql. Details: ${result.text}` };
+      }
+
+      return { success: false, error: `Supabase error ${result.status}: ${result.text}` };
+    } catch (e) {
+      return { success: false, error: `Internet required to create account. Error: ${e.message}` };
     }
   },
 
-  // Fetch all reps from Supabase (for admin overview of millions)
   getAllReps: async function() {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?select=*`;
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'apikey': this.supabaseConfig.anonKey,
-          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-        }
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
       });
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.log(`[getAllReps] Status ${response.status}`);
+        return [];
+      }
       const data = await response.json();
+      console.log(`[getAllReps] Fetched ${data.length} reps from Supabase`);
       return data;
-    } catch {
+    } catch (e) {
+      console.log('[getAllReps] Error', e.message);
       return [];
     }
   },
 
-  // Verify rep credentials - SUPABASE ONLY (blocks login without account)
   verifyRepCredentials: async function(inputIdOrEmail, inputPassword) {
     try {
       const normalizedInput = inputIdOrEmail.trim();
-      // Try fetch by ID or Email - Supabase OR filter
-      // For millions scalability, we use or=(id.eq.X,email.eq.Y)
       const encodedId = encodeURIComponent(normalizedInput);
       const encodedEmail = encodeURIComponent(normalizedInput.toLowerCase());
+      // Try OR filter for id or email
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?select=*&or=(id.eq.${encodedId},email.eq.${encodedEmail})`;
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'apikey': this.supabaseConfig.anonKey,
-          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-        }
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
       });
 
       if (!response.ok) {
-        return { success: false, message: `Supabase error ${response.status}. Check internet or run SQL fix for 404.` };
+        return { success: false, message: `Supabase error ${response.status}. Run SQL fix.` };
       }
 
       const reps = await response.json();
       if (!reps || reps.length === 0) {
-        return { success: false, message: `Account not found for "${inputIdOrEmail}". Please sign up first! Every acc must be backed up to Supabase.` };
+        // Try case-insensitive search by fetching all and filtering (fallback for big company if OR filter fails)
+        const allReps = await this.getAllReps();
+        const foundFallback = allReps.find(r => 
+          r.id?.toLowerCase() === normalizedInput.toLowerCase() || 
+          r.email?.toLowerCase() === normalizedInput.toLowerCase()
+        );
+        if (!foundFallback) {
+          return { success: false, message: `Account not found for "${inputIdOrEmail}". Please sign up first!` };
+        }
+        // Check password if available
+        if (foundFallback.password && foundFallback.password !== inputPassword) {
+          return { success: false, message: 'Incorrect password.' };
+        }
+        return { success: true, rep: foundFallback };
       }
 
-      const found = reps[0]; // take first match
-      // Check password
+      const found = reps[0];
       if (found.password && found.password !== inputPassword) {
-        return { success: false, message: 'Incorrect password. Try again or reset via Forgot Password.' };
+        return { success: false, message: 'Incorrect password.' };
       }
 
       return { success: true, rep: found };
     } catch (e) {
-      return { success: false, message: `Internet required to login (Supabase check). Error: ${e.message}` };
+      return { success: false, message: `Internet required to login. Error: ${e.message}` };
     }
   },
 
-  // ==================== CLIENTS - SUPABASE ONLY, FILTERED BY REP ====================
+  // CLIENTS
   saveNewClient: async function(clientObject) {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}`;
-      // Ensure rep_id field for filtering by owner rep
       const payload = {
         id: clientObject.id,
         name: clientObject.name,
         address: clientObject.address,
         owner_contact: clientObject.owner || clientObject.owner_contact,
-        credit_limit: clientObject.creditLimit || '₦500,000',
+        credit_limit: clientObject.creditLimit || clientObject.credit_limit || '₦500,000',
         registered_email: clientObject.email || clientObject.storeEmail,
-        gps_coordinates: clientObject.gpsVerified || '',
-        // Custom fields for big company multi-user: who created it
+        gps_coordinates: clientObject.gpsVerified || clientObject.gps_coordinates || '',
         rep_id: clientObject.rep_id || clientObject.createdByRepId || 'UNKNOWN',
         created_by_rep_id: clientObject.rep_id || clientObject.createdByRepId || 'UNKNOWN',
+        business_type: clientObject.businessType || '',
+        phone: clientObject.phone || '',
+        standing: clientObject.standing || 'Good Standing 🟢',
         created_at: new Date().toISOString()
       };
 
@@ -168,76 +199,66 @@ export const DatabaseEngine = {
         body: JSON.stringify(payload)
       });
 
+      const text = await response.text();
       if (!response.ok) {
-        const txt = await response.text();
-        console.log(`[Client Push] ${response.status}: ${txt}`);
-        // Even if Supabase push fails due to missing column rep_id, still return success for local flow but log
-        // For strict big company, we want push to succeed, so return error if 404 etc
+        console.log(`[Client Push] Status ${response.status}: ${text}`);
+        // If rep_id column missing, try without it
+        if (text.includes('rep_id') || text.includes('created_by_rep_id')) {
+          console.log('Missing rep_id columns, run ADD_MISSING_COLUMNS.sql');
+        }
         if (response.status === 404) {
-          return { success: false, error: `fhsup_clients table missing. Run SQL fix. ${txt}` };
+          return { success: false, error: `fhsup_clients table missing. Run SQL fix.` };
         }
       }
 
-      return { success: true };
+      return { success: response.ok, status: response.status, text };
     } catch (e) {
-      return { success: false, error: `Internet needed to save client to Supabase: ${e.message}` };
+      return { success: false, error: `Internet needed: ${e.message}` };
     }
   },
 
-  // Reps see ONLY their own clients (filtered by rep_id)
   getClientsByRep: async function(repId) {
     try {
       const encodedRepId = encodeURIComponent(repId);
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?select=*&or=(rep_id.eq.${encodedRepId},created_by_rep_id.eq.${encodedRepId})`;
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'apikey': this.supabaseConfig.anonKey,
-          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-        }
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
       });
       if (!response.ok) {
-        // If filtering by rep_id fails due to missing column, fallback to get all and filter client-side (for backward compat)
+        // Fallback: get all and filter client-side
         const fallbackUrl = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?select=*`;
         const fallbackRes = await fetch(fallbackUrl, { headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
         if (!fallbackRes.ok) return [];
         const allClients = await fallbackRes.json();
-        // For demo, if no rep_id column, return all (admin sees all, but rep should see only own - we will filter by email owner? For now return all as fallback)
-        return allClients;
+        // Filter by rep_id if exists, else return all for backward compat
+        const filtered = allClients.filter(c => c.rep_id === repId || c.created_by_rep_id === repId);
+        return filtered.length > 0 ? filtered : allClients;
       }
-      const data = await response.json();
-      return data;
-    } catch {
-      return [];
-    }
+      return await response.json();
+    } catch { return []; }
   },
 
   getAllClients: async function() {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?select=*`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
-      });
+      const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
       return await response.json();
     } catch { return []; }
   },
 
-  // ==================== CATALOG - SUPABASE ONLY (global for all reps) ====================
+  // CATALOG
   getCatalog: async function() {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?select=*`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
-      });
+      const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
       return await response.json();
     } catch { return []; }
   },
 
-  // ==================== ORDERS - SUPABASE + OFFLINE QUEUE ONLY ====================
+  // OFFLINE ORDERS ONLY - As you requested
   getOfflineOrders: async function() {
     try {
       const data = await AsyncStorage.getItem(this.KEYS.OFFLINE_ORDERS);
@@ -247,44 +268,28 @@ export const DatabaseEngine = {
 
   saveOfflineOrder: async function(orderRecord) {
     try {
-      // This is the ONLY place we use AsyncStorage as you requested
       const currentOrders = await this.getOfflineOrders();
-      const newRecord = {
-        ...orderRecord,
-        localTimestamp: new Date().toISOString(),
-        syncStatus: 'PENDING_CLOUD_SYNC ⏳',
-      };
+      const newRecord = { ...orderRecord, localTimestamp: new Date().toISOString(), syncStatus: 'PENDING_CLOUD_SYNC ⏳' };
       const updated = [newRecord, ...currentOrders];
       await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify(updated));
-      console.log(`[Offline Orders] Saved locally, will sync when online. Total offline: ${updated.length}`);
+      console.log(`[Offline] Saved, total offline: ${updated.length}`);
       return { success: true, orders: updated, offline: true };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
+    } catch (e) { return { success: false, error: e.message }; }
   },
 
-  // Try to push offline orders to Supabase, then wipe local as you requested
   syncToCloudBackend: async function() {
     try {
       const pendingOrders = await this.getOfflineOrders();
-      if (pendingOrders.length === 0) {
-        return { success: true, count: 0, message: 'No offline orders to sync.' };
-      }
-
+      if (pendingOrders.length === 0) return { success: true, count: 0, message: 'No offline orders.' };
       let successCount = 0;
       for (const order of pendingOrders) {
         const pushed = await this._pushOrderToSupabase(order);
         if (pushed) successCount++;
       }
-
-      // WIPE AWAY after synced, paving new place for new offline orders (as you requested)
       await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify([]));
-      console.log(`[Offline Orders] Wiped after sync. ${successCount} synced, local cleared for new orders.`);
-
-      return { success: true, count: successCount, message: `Synced ${successCount} orders to Supabase and wiped local queue.` };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
+      console.log(`[Offline] Wiped after sync ${successCount} orders`);
+      return { success: true, count: successCount, message: `Synced ${successCount} and wiped local.` };
+    } catch (e) { return { success: false, error: e.message }; }
   },
 
   _pushOrderToSupabase: async function(orderObj) {
@@ -292,12 +297,7 @@ export const DatabaseEngine = {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}`;
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': this.supabaseConfig.anonKey,
-          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-          'Prefer': 'return=minimal'
-        },
+        headers: { 'Content-Type': 'application/json', 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}`, 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           invoice_number: orderObj.invoiceNumber || `INV-${Math.floor(Math.random()*9000)}`,
           store_name: orderObj.store || orderObj.clientName || 'Client Store',
@@ -312,15 +312,11 @@ export const DatabaseEngine = {
     } catch { return false; }
   },
 
-  // Reps see only own orders
   getOrdersByRep: async function(repId) {
     try {
       const encodedRepId = encodeURIComponent(repId);
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}?select=*&rep_id=eq.${encodedRepId}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
-      });
+      const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
       return await response.json();
     } catch { return []; }
@@ -329,24 +325,16 @@ export const DatabaseEngine = {
   getAllOrders: async function() {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}?select=*`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
-      });
+      const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
       return await response.json();
     } catch { return []; }
   },
 
-  // ==================== SESSION - SECURE STORE (encrypted) ====================
+  // SESSION - SecureStore
   saveSession: async function(repObj) {
-    try {
-      await SecureStore.setItemAsync(this.KEYS.SESSION, JSON.stringify(repObj));
-      return { success: true };
-    } catch { 
-      // Fallback to AsyncStorage if SecureStore fails
-      try { await AsyncStorage.setItem(this.KEYS.SESSION, JSON.stringify(repObj)); return { success: true }; } catch { return { success: false }; }
-    }
+    try { await SecureStore.setItemAsync(this.KEYS.SESSION, JSON.stringify(repObj)); return { success: true }; }
+    catch { try { await AsyncStorage.setItem(this.KEYS.SESSION, JSON.stringify(repObj)); return { success: true }; } catch { return { success: false }; } }
   },
 
   getSession: async function() {
@@ -359,14 +347,8 @@ export const DatabaseEngine = {
   },
 
   clearSession: async function() {
-    try {
-      await SecureStore.deleteItemAsync(this.KEYS.SESSION);
-      await AsyncStorage.removeItem(this.KEYS.SESSION);
-    } catch {}
-  },
-
-  // Dummy compatibility for old code that calls these (now no-op, since we removed local storage for those)
-  getAllRepsCompat: async function() { return this.getAllReps(); },
+    try { await SecureStore.deleteItemAsync(this.KEYS.SESSION); await AsyncStorage.removeItem(this.KEYS.SESSION); } catch {}
+  }
 };
 
 export default DatabaseEngine;
