@@ -274,8 +274,15 @@ export default function AdminDashboardScreen() {
       {/* Admin Header */}
       <View style={[styles.headerBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerTopRow}>
-          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.exitAdminBtn}>
-            <Text style={styles.exitAdminText}>⬅️ Rep Portal</Text>
+          <TouchableOpacity onPress={async () => {
+            await DatabaseEngine.clearSession();
+            OrderStore.currentAgent = {
+              name: 'Guest Officer', id: 'REP-GUEST', role: 'Field Officer',
+              territory: '', avatar: null, initials: 'GO', email: ''
+            };
+            router.replace('/');
+          }} style={styles.exitAdminBtn}>
+            <Text style={styles.exitAdminText}>⬅️ Sign Out</Text>
           </TouchableOpacity>
 
           <Text style={[styles.adminTitle, { color: colors.amber }]} numberOfLines={1}>
