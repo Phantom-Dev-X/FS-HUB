@@ -107,8 +107,10 @@ create table if not exists public.fshub_admins (
   role text,
   is_primary boolean default false,
   is_super boolean default false,
+  password text,
   created_at timestamptz default now()
 );
+alter table public.fshub_admins add column if not exists password text;
 
 -- The current app calls PostgREST directly with the anon key. Explicit grants
 -- are required in addition to disabling RLS.

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert, Platform, Switch 
+  TextInput, Alert, Platform, Switch, ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,6 +21,7 @@ export default function AdminDashboardScreen() {
   const { isDark, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('ORDERS'); // 'ORDERS' | 'REPS' | 'CATALOG' | 'ADMINS'
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(null);
 
   // Look right here: 100% CLEAN BASELINE (`[]`) ON DAY 1!
   const [incomingOrders, setIncomingOrders] = useState([]);
@@ -52,6 +53,16 @@ export default function AdminDashboardScreen() {
   const [isSuperToggle, setIsSuperToggle] = useState(false);
 
   useEffect(() => {
+    (async () => {
+      const session = await DatabaseEngine.getSession();
+      if (!DatabaseEngine.isAdminSession(session)) {
+        setIsAuthorized(false);
+        Alert.alert('Admin access required', 'Field representatives cannot open the Admin Portal.');
+        router.replace('/home');
+        return;
+      }
+      setIsAuthorized(true);
+    })();
     DatabaseEngine.getCatalog().then(data => setCatalogItems(data));
     DatabaseEngine.getAllReps().then(repsData => {
       const combined = [...OrderStore.activeReps, ...repsData];
@@ -162,13 +173,13 @@ export default function AdminDashboardScreen() {
     };
 
     const res = await DatabaseEngine.addNewProductToCatalog(newProduct);
-    if (res.success) {
-      setCatalogItems(res.catalog);
-    } else {
-      setCatalogItems([newProduct, ...catalogItems]);
+    if (!res.success) {
+      Alert.alert('Product Save Failed', res.error || 'The product was not saved to Supabase.');
+      return;
     }
-
-    OrderStore.addNewProduct(newProduct);
+    const refreshedCatalog = await DatabaseEngine.getCatalog();
+    setCatalogItems(refreshedCatalog);
+    OrderStore.catalog = refreshedCatalog;
 
     setNewProdName('');
     setNewProdPrice('');
@@ -252,6 +263,10 @@ export default function AdminDashboardScreen() {
 
     Alert.alert('Role Updated ✓', `${adminObj.name} permissions adjusted.`);
   };
+
+  if (isAuthorized !== true) {
+    return <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator size="large" /><Text style={{ marginTop: 12 }}>Verifying admin access…</Text></SafeAreaView>;
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

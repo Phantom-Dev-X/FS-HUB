@@ -209,6 +209,26 @@ export const DatabaseEngine = {
     } catch (e) { return { success: false, error: e.message }; }
   },
 
+  verifyAdminCredentials: async function(email, password) {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.adminsTable}?select=*&email=eq.${encodeURIComponent(normalizedEmail)}`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) return { success: false, message: `Admin database error ${response.status}.` };
+      const admins = await response.json();
+      const admin = admins[0];
+      if (!admin) return { success: false, message: 'Admin account not found.' };
+      if (!admin.password) return { success: false, message: 'This admin has no password configured. Set it securely in Supabase first.' };
+      if (admin.password !== password) return { success: false, message: 'Incorrect admin password.' };
+      return { success: true, admin: { ...admin, accountType: 'admin' } };
+    } catch (e) { return { success: false, message: `Could not verify admin: ${e.message}` }; }
+  },
+
+  isAdminSession: function(session) {
+    return Boolean(session && (session.accountType === 'admin' || String(session.id || '').startsWith('ADM-')));
+  },
+
   // CLIENTS
   saveNewClient: async function(clientObject) {
     try {
@@ -301,7 +321,12 @@ export const DatabaseEngine = {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?select=*`;
       const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
-      return await response.json();
+      const products = await response.json();
+      return products.map(product => ({
+        ...product,
+        price: Number(product.unit_price ?? product.price ?? 0),
+        stock: Number(product.warehouse_stock ?? product.stock ?? 0)
+      }));
     } catch { return []; }
   },
 
