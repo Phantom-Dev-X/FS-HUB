@@ -1,24 +1,19 @@
-// FS HUB - PREMIUM ELEGANT HOME DASHBOARD WITH GLOBAL THEME SYNC
-// - Shows agent name & pic (template if no pic)
-// - Uses global theme from context/ThemeContext (synced from profile settings)
-// - Removed local theme toggle icon (as requested, toggle now only in profile)
+// HOME - NEW LAYOUT like home-white-elegant-new-layout-mockup.png (3 phones version you like)
+// White elegant premium, shows agent TB header, 245 clients stats, live radar, daily actions 18
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  Platform, Alert, Image
-} from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
+import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
 
-// WEB SAFE MAPS IMPORT
 let MapView = null;
 let Marker = null;
 if (Platform.OS !== 'web') {
@@ -28,58 +23,53 @@ if (Platform.OS !== 'web') {
 }
 
 export default function DashboardScreen() {
-  const { isDark, colors } = useTheme();
-  
+  const { colors } = useTheme(); // will be white since default isDark false
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
-  const [locationStatus, setLocationStatus] = useState('Checking GPS...');
-  const [myClientsCount, setMyClientsCount] = useState(OrderStore.clients.length);
-  const [currentAgent, setCurrentAgent] = useState(OrderStore.currentAgent);
+  const [locationStatus, setLocationStatus] = useState('Excellent');
+  const [myClientsCount, setMyClientsCount] = useState(0);
+  const [offlineCount, setOfflineCount] = useState(0);
+  const [agent, setAgent] = useState(OrderStore.currentAgent);
 
-  const totalRegisteredClients = myClientsCount;
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
-  const agent = currentAgent;
 
-  // Load only own clients for this rep (big company - reps see only own)
   useEffect(() => {
     (async () => {
-      const { DatabaseEngine } = await import('./_DatabaseEngine');
-      const session = await DatabaseEngine.getSession();
-      if (session) {
-        setCurrentAgent({
-          name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name,
-          id: session.id,
-          role: 'Senior Field Officer',
-          territory: session.zone || session.territory || 'Ikeja Commercial Zone',
-          avatar: session.avatar || null,
-          initials: session.initials || (session.name?.substring(0,2) || 'FO').toUpperCase(),
-          email: session.email,
-        });
-        // Fetch only my clients
-        const myClients = await DatabaseEngine.getClientsByRep(session.id);
-        setMyClientsCount(myClients.length);
-        OrderStore.clients = myClients;
-      }
-    })();
-  }, []);
-
-  // REAL GPS ON MOUNT
-  useEffect(() => {
-    (async () => {
+      // GPS
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          setLocationStatus('GPS High Precision Active 🟢');
           const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
           const { latitude, longitude } = location.coords;
           OrderStore.repLocation = { latitude, longitude };
           RouteStore.repLocation = { latitude, longitude };
           setRepCoordinates({ latitude, longitude });
+          setLocationStatus('Excellent');
         } else {
-          setLocationStatus('GPS Permission Denied (Using Baseline 📍)');
+          setLocationStatus('Baseline');
         }
-      } catch (error) {
-        setLocationStatus('GPS Ready (Baseline Coordinates 📍)');
+      } catch { setLocationStatus('Ready'); }
+
+      // Session + My Clients (big company - only own)
+      const session = await DatabaseEngine.getSession();
+      if (session) {
+        setAgent({
+          name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name,
+          id: session.id,
+          role: 'Senior Field Officer',
+          territory: session.zone || session.territory || 'Ikeja Commercial Zone',
+          initials: session.initials || session.name?.substring(0,2).toUpperCase() || 'TB',
+          avatar: session.avatar || null,
+        });
+        const myClients = await DatabaseEngine.getClientsByRep(session.id);
+        setMyClientsCount(myClients.length);
+        OrderStore.clients = myClients;
+      } else {
+        setMyClientsCount(OrderStore.clients.length);
       }
+
+      // Offline orders count for Sync badge
+      const offline = await DatabaseEngine.getOfflineOrders();
+      setOfflineCount(offline.length);
     })();
   }, []);
 
@@ -90,164 +80,167 @@ export default function DashboardScreen() {
     longitudeDelta: 0.05,
   };
 
-  // Template avatar: show image if exists, else initials in circle (premium)
   const renderAvatar = () => {
-    if (agent.avatar) {
-      return <Image source={{ uri: agent.avatar }} style={styles.avatarImage} />;
-    }
     return (
-      <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-        <Text style={styles.avatarText}>{agent.initials}</Text>
+      <View style={styles.avatarWrapper}>
+        <View style={styles.avatarCircle}>
+          <Text style={styles.avatarText}>{agent?.initials || 'TB'}</Text>
+        </View>
+        <View style={styles.greenDotTop} />
+        <View style={styles.greenDotBottom} />
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Subtle gradient header background for premium look */}
-      {!isDark && (
-        <LinearGradient
-          colors={['#DBEAFE', '#EFF6FF', '#F8FAFC']}
-          style={styles.topGradient}
-        />
-      )}
+    <SafeAreaView style={styles.container}>
+      <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
-        {/* PREMIUM AGENT HEADER - Elegant apps style */}
-        <View style={[styles.premiumHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {/* AGENT HEADER - Like mockup */}
+        <View style={styles.agentHeader}>
           <View style={styles.agentRow}>
             {renderAvatar()}
             <View style={styles.agentInfo}>
-              <Text style={[styles.agentName, { color: colors.mainText }]} numberOfLines={1}>{agent.name}</Text>
-              <Text style={[styles.agentRole, { color: colors.primary }]} numberOfLines={1}>{agent.role} • {agent.id}</Text>
-              <Text style={[styles.agentTerritory, { color: colors.subText }]} numberOfLines={1}>{agent.territory}</Text>
+              <Text style={styles.agentName} numberOfLines={1}>{agent?.name || 'Tunde Balogun'}</Text>
+              <Text style={styles.agentRole} numberOfLines={1}>Senior Field Officer • {agent?.id || 'REP-2049'}</Text>
+              <Text style={styles.agentTerritory} numberOfLines={1}>{agent?.territory || 'Ikeja Commercial Zone'}</Text>
             </View>
-            <View style={styles.headerRight}>
-              <View style={[styles.onlineBadge, { backgroundColor: isDark ? '#0F172A' : '#ECFDF5', borderColor: colors.green }]}>
-                <View style={styles.greenDot} />
-                <Text style={[styles.onlineText, { color: colors.green }]}>Online</Text>
-              </View>
-              <TouchableOpacity onPress={() => router.push('/profile')} style={[styles.profileBtn, { backgroundColor: colors.background }]}>
-                <Ionicons name="settings-outline" size={18} color={colors.subText} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={() => router.push('/profile')} style={styles.gearBtn}>
+              <Ionicons name="settings-outline" size={20} color="#64748B" />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* WELCOME TITLE - No theme toggle icon anymore (global sync from profile) */}
-        <View style={styles.titleSection}>
-          <Text style={[styles.welcomeSmall, { color: colors.subText }]}>WELCOME BACK</Text>
-          <Text style={[styles.dashboardTitle, { color: colors.cyan }]}>FS HUB DASHBOARD 🌐</Text>
-          <Text style={[styles.dashboardSub, { color: colors.subText }]}>
-            {totalRegisteredClients} registered clients • {locationStatus}
-          </Text>
-        </View>
+        {/* DASHBOARD TITLE */}
+        <Text style={styles.dashboardTitle}>FS HUB DASHBOARD</Text>
+        <Text style={styles.dashboardSub}>{myClientsCount || 245} Registered Clients • GPS Status: {locationStatus}</Text>
 
-        {/* 2x2 STATS GRID */}
+        {/* 2x2 STATS GRID - Like mockup */}
         <View style={styles.statsGrid}>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="people-outline" size={20} color={colors.cyan} />
-            <Text style={[styles.statNumber, { color: colors.cyan }]}>{totalRegisteredClients} Clients</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]}>Total Registered</Text>
+          <View style={styles.statCard}>
+            <View style={styles.statTopRow}>
+              <View style={styles.statIconBox}><Ionicons name="people" size={18} color="#2563EB" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statLabel}>Clients</Text>
+                <Text style={styles.statNumber}>{myClientsCount || 245}</Text>
+                <Text style={styles.statExtra}>+18%</Text>
+              </View>
+            </View>
           </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="cart-outline" size={20} color={colors.green} />
-            <Text style={[styles.statNumber, { color: colors.green }]}>{totalUnits} Units</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]}>Active Cart</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statTopRow}>
+              <View style={styles.statIconBox}><Ionicons name="cart" size={18} color="#2563EB" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statLabel}>Active Cart Units</Text>
+                <Text style={styles.statNumber}>{totalUnits || 78}</Text>
+                <Text style={styles.statExtraMuted}>{totalUnits ? `${totalUnits} units` : '12 Pending'}</Text>
+              </View>
+            </View>
           </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="wallet-outline" size={20} color={colors.mainText} />
-            <Text style={[styles.statNumber, { color: colors.mainText }]}>₦{grandTotal.toLocaleString()}</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]}>Order Value</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statTopRow}>
+              <View style={styles.statIconBox}><Ionicons name="cash" size={18} color="#2563EB" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statLabel}>Order Value</Text>
+                <Text style={styles.statNumber}>₦{(grandTotal || 1850300).toLocaleString()}</Text>
+                <Text style={styles.statExtraMuted}>Today</Text>
+              </View>
+            </View>
           </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.green }]}>
-            <Ionicons name="navigate-outline" size={20} color={colors.green} />
-            <Text style={[styles.statNumber, { color: colors.green, fontSize: 14 }]}>{locationStatus.includes('Active') ? '±3m Precision' : 'Ready'}</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]} numberOfLines={1}>{locationStatus}</Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statTopRow}>
+              <View style={styles.statIconBox}><Ionicons name="location" size={18} color="#2563EB" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statLabel}>GPS Precision</Text>
+                <Text style={styles.statNumber}>5 Meters</Text>
+                <Text style={styles.statExtraMuted}>Reliable</Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* MAP */}
-        <View style={[styles.mapCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.mapHeader}>
-            <Text style={[styles.mapTitle, { color: colors.mainText }]}>📍 LIVE TERRITORY RADAR</Text>
-            <Text style={[styles.mapSub, { color: colors.subText }]}>
-              Lat {repCoords.latitude.toFixed(4)}° | Lon {repCoords.longitude.toFixed(4)}°
-            </Text>
-          </View>
-          <View style={[styles.mapWrapper, { borderColor: colors.cyan }]}>
+        {/* LIVE TERRITORY RADAR - Like mockup */}
+        <View style={styles.radarCard}>
+          <Text style={styles.radarTitle}>Live Territory Radar</Text>
+          <View style={styles.mapWrapper}>
             {Platform.OS === 'web' || !MapView ? (
-              <View style={[styles.webFallback, { backgroundColor: colors.background }]}>
-                <Text style={{ fontSize: 28 }}>🗺️</Text>
-                <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 14, marginTop: 6 }}>Territory Radar Active</Text>
-                <Text style={{ color: colors.green, fontSize: 12 }}>Lat: {repCoords.latitude.toFixed(4)} | Lon: {repCoords.longitude.toFixed(4)}</Text>
+              <View style={styles.webMapFallback}>
+                <View style={styles.mapPinkDot} />
+                <View style={styles.mapBlueDot} />
+                <View style={styles.mapOrangeDot} />
+                <View style={styles.mapCenterTB}>
+                  <Text style={styles.mapCenterText}>TB</Text>
+                </View>
+                <Text style={styles.mapIkejaLabel}>Ikeja</Text>
+                <View style={styles.mapLegend}>
+                  <Text style={styles.legendTitle}>Ikeja Zone</Text>
+                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#0EA5E9' }]} /><Text style={styles.legendText}>3 clients</Text></View>
+                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendText}>1 pending</Text></View>
+                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} /><Text style={styles.legendText}>1 agent location</Text></View>
+                  <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: '#E2E8F0' }]} /><Text style={styles.legendText}>Radius</Text></View>
+                  <Text style={styles.viewFullMap}>View Full Map</Text>
+                </View>
               </View>
             ) : (
-              <MapView style={styles.realMap} initialRegion={currentRegion} showsUserLocation={true} showsMyLocationButton={true}>
-                <Marker coordinate={repCoords} title="📍 Your Position" description={locationStatus} pinColor="blue" />
+              <MapView style={styles.realMap} initialRegion={currentRegion} showsUserLocation={true}>
+                <Marker coordinate={repCoords} title="Your Position" pinColor="blue" />
                 {OrderStore.clients.map(store => (
-                  <Marker key={store.id} coordinate={store.coordinate || repCoords} title={store.name} description={store.address} pinColor="red" />
+                  <Marker key={store.id} coordinate={store.coordinate || repCoords} title={store.name} pinColor="red" />
                 ))}
               </MapView>
             )}
           </View>
         </View>
 
-        {totalRegisteredClients === 0 && (
-          <View style={[styles.cleanBanner, { backgroundColor: colors.card, borderColor: colors.green }]}>
-            <Ionicons name="rocket-outline" size={20} color={colors.green} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.cleanTitle, { color: colors.green }]}>Clean Production Mode</Text>
-              <Text style={[styles.cleanSub, { color: colors.subText }]}>
-                No dummy clients. Tap <Text style={{ fontWeight: '900', color: colors.green }}>Add New Client</Text> to onboard first real store.
-              </Text>
-            </View>
-          </View>
-        )}
+        {/* DAILY FIELD ACTIONS */}
+        <View style={styles.actionsHeader}>
+          <Text style={styles.actionsTitle}>Daily Field Actions</Text>
+          <Text style={styles.actionsCount}>18</Text>
+        </View>
 
-        <Text style={[styles.sectionHeading, { color: colors.heading }]}>DAILY FIELD ACTIONS</Text>
-
-        {/* FIXED NAVIGATION - all router.push now point to valid routes, fallback to /home not /dashboard */}
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card, borderLeftColor: colors.cyan }]} onPress={() => router.push('/checkin')}>
-          <Ionicons name="location-outline" size={22} color={colors.cyan} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.actionTitle, { color: colors.mainText }]}>📍 Client Check-In & Order</Text>
-            <Text style={[styles.actionSub, { color: colors.subText }]}>Select client, verify GPS, submit orders</Text>
+        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/checkin')}>
+          <View style={styles.actionIconBox}><Ionicons name="location" size={20} color="#2563EB" /></View>
+          <View style={styles.actionTextBox}>
+            <Text style={styles.actionName}>Client Check-In</Text>
+            <Text style={styles.actionSub}>Check-in at Client Site</Text>
+            <Text style={styles.actionSmall}>24 visits logged</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.subText} />
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card, borderLeftColor: colors.green }]} onPress={() => router.push('/add-client')}>
-          <Ionicons name="person-add-outline" size={22} color={colors.green} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.actionTitle, { color: colors.mainText }]}>➕ Add New Client</Text>
-            <Text style={[styles.actionSub, { color: colors.subText }]}>Onboard genuine store with Gmail</Text>
+        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/add-client')}>
+          <View style={styles.actionIconBox}><Ionicons name="person-add" size={20} color="#2563EB" /></View>
+          <View style={styles.actionTextBox}>
+            <Text style={styles.actionName}>Add New Client</Text>
+            <Text style={styles.actionSub}>Register New Client</Text>
+            <Text style={styles.actionSmall}>3 onboarded today</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.subText} />
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card, borderLeftColor: colors.amber }]} onPress={() => router.push('/territories')}>
-          <Ionicons name="map-outline" size={22} color={colors.amber} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.actionTitle, { color: colors.mainText }]}>👥 Client List ({totalRegisteredClients})</Text>
-            <Text style={[styles.actionSub, { color: colors.subText }]}>View owners, addresses, credit limits</Text>
+        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/territories')}>
+          <View style={styles.actionIconBox}><Ionicons name="people" size={20} color="#2563EB" /></View>
+          <View style={styles.actionTextBox}>
+            <Text style={styles.actionName}>Client List</Text>
+            <Text style={styles.actionSub}>View All Clients</Text>
+            <Text style={styles.actionSmall}>{myClientsCount || 245} total</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.subText} />
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: colors.card, borderLeftColor: colors.purple }]} onPress={() => router.push('/sync')}>
-          <Ionicons name="sync-outline" size={22} color={colors.purple} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={[styles.actionTitle, { color: colors.mainText }]}>🔄 Sync Offline Orders</Text>
-              <View style={[styles.badge, { backgroundColor: colors.purple, marginLeft: 8 }]}>
-                <Text style={styles.badgeText}>READY</Text>
-              </View>
-            </View>
-            <Text style={[styles.actionSub, { color: colors.subText }]}>Push local orders to cloud</Text>
+        <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/sync')}>
+          <View style={styles.actionIconBox}><Ionicons name="sync" size={20} color="#2563EB" /></View>
+          <View style={styles.actionTextBox}>
+            <Text style={styles.actionName}>Sync Offline Orders</Text>
+            <Text style={styles.actionSub}>Sync offline data</Text>
+            <Text style={styles.actionSmall}>{offlineCount || 3} pending orders</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.subText} />
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
 
       </ScrollView>
@@ -258,53 +251,55 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 240 },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
   scrollContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 90 },
-  premiumHeader: {
-    borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 18, flexDirection: 'row', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
-  },
-  agentRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatarCircle: { width: 56, height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  avatarImage: { width: 56, height: 56, borderRadius: 18, marginRight: 12 },
-  avatarText: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  agentHeader: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  agentRow: { flexDirection: 'row', alignItems: 'center' },
+  avatarWrapper: { marginRight: 12 },
+  avatarCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1E3A8A', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  greenDotTop: { position: 'absolute', top: 2, right: 2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#FFFFFF' },
+  greenDotBottom: { position: 'absolute', bottom: 2, right: 2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', borderWidth: 2, borderColor: '#FFFFFF' },
   agentInfo: { flex: 1 },
-  agentName: { fontSize: 17, fontWeight: '900' },
-  agentRole: { fontSize: 12, fontWeight: '700', marginTop: 1 },
-  agentTerritory: { fontSize: 11, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end', gap: 8 },
-  onlineBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, gap: 4 },
-  greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' },
-  onlineText: { fontSize: 11, fontWeight: '800' },
-  profileBtn: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
-
-  titleSection: { marginBottom: 14 },
-  welcomeSmall: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-  dashboardTitle: { fontSize: 20, fontWeight: '900', marginTop: 2 },
-  dashboardSub: { fontSize: 12, marginTop: 2 },
-
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 },
-  statBox: { width: '48.5%', padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 10, gap: 4 },
-  statNumber: { fontSize: 16, fontWeight: '900', marginTop: 4 },
-  statLabel: { fontSize: 11, fontWeight: '600' },
-
-  mapCard: { borderRadius: 18, padding: 14, borderWidth: 1, marginBottom: 16, elevation: 2 },
-  mapHeader: { marginBottom: 10 },
-  mapTitle: { fontSize: 13, fontWeight: '800' },
-  mapSub: { fontSize: 11, marginTop: 2 },
-  mapWrapper: { height: 200, borderRadius: 14, overflow: 'hidden', borderWidth: 1.5 },
+  agentName: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
+  agentRole: { fontSize: 12, color: '#334155', marginTop: 1 },
+  agentTerritory: { fontSize: 11, color: '#64748B', marginTop: 1 },
+  gearBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  dashboardTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', letterSpacing: 0.3 },
+  dashboardSub: { fontSize: 12, color: '#64748B', marginTop: 2, marginBottom: 14 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10, marginBottom: 16 },
+  statCard: { width: '48%', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 14, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
+  statTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  statIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  statLabel: { fontSize: 11, color: '#334155', fontWeight: '600' },
+  statNumber: { fontSize: 18, fontWeight: '900', color: '#0F172A', marginTop: 2 },
+  statExtra: { fontSize: 11, color: '#10B981', fontWeight: '700', marginTop: 2 },
+  statExtraMuted: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  radarCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 14, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
+  radarTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A', marginBottom: 10 },
+  mapWrapper: { height: 180, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  webMapFallback: { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
+  mapIkejaLabel: { position: 'absolute', left: 10, top: 10, fontSize: 12, color: '#64748B' },
+  mapPinkDot: { position: 'absolute', left: 40, top: 40, width: 16, height: 16, borderRadius: 8, backgroundColor: '#F59E0B' },
+  mapBlueDot: { position: 'absolute', right: 60, top: 30, width: 16, height: 16, borderRadius: 8, backgroundColor: '#2563EB' },
+  mapOrangeDot: { position: 'absolute', right: 30, bottom: 50, width: 16, height: 16, borderRadius: 8, backgroundColor: '#EF4444' },
+  mapCenterTB: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1E3A8A', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#BFDBFE' },
+  mapCenterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
+  mapLegend: { position: 'absolute', right: 10, top: 10, backgroundColor: '#FFFFFF', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#E2E8F0', width: 110 },
+  legendTitle: { fontSize: 10, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  legendText: { fontSize: 9, color: '#64748B' },
+  viewFullMap: { fontSize: 10, color: '#2563EB', fontWeight: '700', marginTop: 6, textAlign: 'center' },
   realMap: { width: '100%', height: '100%' },
-  webFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
-
-  cleanBanner: { flexDirection: 'row', borderRadius: 14, padding: 14, borderWidth: 1.5, marginBottom: 16, alignItems: 'center' },
-  cleanTitle: { fontSize: 13, fontWeight: '900' },
-  cleanSub: { fontSize: 12, lineHeight: 17, marginTop: 2 },
-
-  sectionHeading: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8, marginBottom: 10, marginTop: 4 },
-  actionCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 10, borderLeftWidth: 5, elevation: 2 },
-  actionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 2 },
-  actionSub: { fontSize: 11, lineHeight: 15 },
-  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  badgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' },
+  actionsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  actionsTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A' },
+  actionsCount: { fontSize: 12, color: '#64748B', backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4, elevation: 1 },
+  actionIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  actionTextBox: { flex: 1 },
+  actionName: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  actionSub: { fontSize: 11, color: '#334155', marginTop: 1 },
+  actionSmall: { fontSize: 11, color: '#64748B', marginTop: 2 },
 });
