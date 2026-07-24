@@ -1,9 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { router, usePathname } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-// Global theme synced footer - no need to pass isDark/colors props anymore
 export default function SmartFooter() {
   const { isDark, colors } = useTheme();
   const currentPath = usePathname();
@@ -19,40 +19,82 @@ export default function SmartFooter() {
   const isHistoryActive = currentPath === '/history';
   const isProfileActive = currentPath === '/profile';
 
+  const renderTab = (isActive, iconActive, iconInactive, label, route, accessibilityLabel) => {
+    return (
+      <TouchableOpacity
+        style={styles.tabItem}
+        onPress={() => router.replace(route)}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+      >
+        <View style={[
+          styles.iconContainer,
+          isActive && { backgroundColor: isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(37, 99, 235, 0.08)' }
+        ]}>
+          <Ionicons
+            name={isActive ? iconActive : iconInactive}
+            size={18}
+            color={isActive ? activeCyan : inactiveGray}
+          />
+        </View>
+        <Text style={[
+          styles.tabLabel,
+          { color: isActive ? activeCyan : inactiveGray },
+          isActive && styles.activeBold
+        ]}>
+          {label}
+        </Text>
+        {isActive && <View style={[styles.activeIndicator, { backgroundColor: activeCyan }]} />}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={[styles.footerContainer, { backgroundColor: bg, borderTopColor: border }]}>
-      <TouchableOpacity style={[styles.tabItem, isHomeActive && { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: activeCyan, borderWidth: isHomeActive ? 1 : 0, borderRadius: 10 }]} onPress={() => router.push('/home')}>
-        <Text style={styles.tabIcon}>🏠</Text>
-        <Text style={[styles.tabLabel, { color: isHomeActive ? activeCyan : inactiveGray }, isHomeActive && styles.activeBold]}>Home</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.tabItem, isRouteActive && { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: activeCyan, borderWidth: isRouteActive ? 1 : 0, borderRadius: 10 }]} onPress={() => router.push('/route')}>
-        <Text style={styles.tabIcon}>🗺️</Text>
-        <Text style={[styles.tabLabel, { color: isRouteActive ? activeCyan : inactiveGray }, isRouteActive && styles.activeBold]}>Route</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.tabItem, isInventoryActive && { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: activeCyan, borderWidth: isInventoryActive ? 1 : 0, borderRadius: 10 }]} onPress={() => router.push('/inventory')}>
-        <Text style={styles.tabIcon}>📦</Text>
-        <Text style={[styles.tabLabel, { color: isInventoryActive ? activeCyan : inactiveGray }, isInventoryActive && styles.activeBold]}>Inventory</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.tabItem, isHistoryActive && { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: activeCyan, borderWidth: isHistoryActive ? 1 : 0, borderRadius: 10 }]} onPress={() => router.push('/history')}>
-        <Text style={styles.tabIcon}>📜</Text>
-        <Text style={[styles.tabLabel, { color: isHistoryActive ? activeCyan : inactiveGray }, isHistoryActive && styles.activeBold]}>History</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.tabItem, isProfileActive && { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: activeCyan, borderWidth: isProfileActive ? 1 : 0, borderRadius: 10 }]} onPress={() => router.push('/profile')}>
-        <Text style={styles.tabIcon}>👤</Text>
-        <Text style={[styles.tabLabel, { color: isProfileActive ? activeCyan : inactiveGray }, isProfileActive && styles.activeBold]}>Profile</Text>
-      </TouchableOpacity>
+      {renderTab(isHomeActive, 'home', 'home-outline', 'Home', '/home', 'Home Tab')}
+      {renderTab(isRouteActive, 'map', 'map-outline', 'Route', '/route', 'Route Tab')}
+      {renderTab(isInventoryActive, 'cube', 'cube-outline', 'Inventory', '/inventory', 'Inventory Tab')}
+      {renderTab(isHistoryActive, 'receipt', 'receipt-outline', 'History', '/history', 'History Tab')}
+      {renderTab(isProfileActive, 'person', 'person-outline', 'Profile', '/profile', 'Profile Tab')}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  footerContainer: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 8, borderTopWidth: 1.2, paddingBottom: 14 },
-  tabItem: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 6 },
-  tabIcon: { fontSize: 18, marginBottom: 2 },
-  tabLabel: { fontSize: 10, fontWeight: '600' },
-  activeBold: { fontWeight: '900' },
+  footerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderTopWidth: 1.2,
+    paddingBottom: 14
+  },
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    position: 'relative'
+  },
+  iconContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600'
+  },
+  activeBold: {
+    fontWeight: '800'
+  },
+  activeIndicator: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    position: 'absolute',
+    bottom: -6,
+  }
 });

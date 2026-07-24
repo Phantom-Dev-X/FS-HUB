@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert, Image, Platform 
+import React, { useState, useCallback } from 'react';
+import {
+  StyleSheet, Text, View, ScrollView, TouchableOpacity,
+  TextInput, Alert, Image, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
@@ -17,13 +17,32 @@ export default function VisitOrdersScreen() {
   const { isDark, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
-  
+
   // Look right right here: We store the real captured photo URI inside local state & OrderStore!
   const [photoUri, setPhotoUri] = useState(OrderStore.currentClient.checkInPhotoUri || null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const client = OrderStore.currentClient;
   const { distinctProducts, totalUnits, grandTotal } = OrderStore.getCartSummary();
+
+  const [catalogItems, setCatalogItems] = useState(OrderStore.catalog || []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const syncCatalog = async () => {
+        const cloudCatalog = await DatabaseEngine.getCatalog();
+        if (active) {
+          OrderStore.catalog = cloudCatalog;
+          setCatalogItems(cloudCatalog);
+        }
+      };
+      syncCatalog();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const colors = {
     background: isDark ? '#0F172A' : '#F4F6F9',
@@ -38,8 +57,8 @@ export default function VisitOrdersScreen() {
 
   const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display'];
 
-  const filteredCatalog = OrderStore.catalog.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery);
+  const filteredCatalog = catalogItems.filter(p => {
+    const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode?.includes(searchQuery);
     const matchesCat = selectedCategory === 'All Products' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -51,10 +70,10 @@ export default function VisitOrdersScreen() {
   const handleTakePhoto = async () => {
     // 1. First, ask for Camera Permissions natively on the phone!
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
+
     if (status !== 'granted') {
       Alert.alert(
-        'Permission Needed ⚠️', 
+        'Permission Needed ⚠️',
         'FS Hub needs camera permission to capture geotagged store entrance photos for audit compliance!'
       );
       return;
@@ -112,7 +131,7 @@ export default function VisitOrdersScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         {/* Top Bar & Back Button */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => router.push('/checkin')} style={[styles.backBtn, { borderColor: colors.border }]}>
@@ -139,7 +158,7 @@ export default function VisitOrdersScreen() {
             📸 REAL CAPTURED PHOTO OR CAMERA LAUNCHER BOX!
             If `photoUri` exists, we display their real captured store photo right here!
             ========================================================================= */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.photoCard, { backgroundColor: photoUri ? '#064E3B' : '#0B1120', borderColor: photoUri ? '#10B981' : colors.cyan }]}
           onPress={handleTakePhoto}
           disabled={isUploadingPhoto}
@@ -170,7 +189,7 @@ export default function VisitOrdersScreen() {
         {/* Search Bar */}
         <View style={[styles.searchWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput 
+          <TextInput
             style={[styles.searchInput, { color: colors.mainText }]}
             placeholder="Search product catalog or #barcode..."
             placeholderTextColor="#64748B"
@@ -185,8 +204,8 @@ export default function VisitOrdersScreen() {
             {categories.map((cat, idx) => {
               const active = selectedCategory === cat;
               return (
-                <TouchableOpacity 
-                  key={idx} 
+                <TouchableOpacity
+                  key={idx}
                   style={[styles.catPill, { backgroundColor: active ? '#007AFF' : colors.card, borderColor: active ? colors.cyan : colors.border }]}
                   onPress={() => setSelectedCategory(cat)}
                 >
@@ -211,7 +230,7 @@ export default function VisitOrdersScreen() {
             const itemSubtotal = cartItem ? (cartItem.qty * cartItem.price) : 0;
 
             return (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={item.id}
                 style={[styles.productCard, { backgroundColor: colors.card, borderColor: inCartQty > 0 ? colors.green : colors.border }]}
                 onPress={() => handleProductTap(item)}
@@ -253,7 +272,7 @@ export default function VisitOrdersScreen() {
           <Text style={[styles.cartGrandTotal, { color: colors.green }]}>₦{grandTotal.toLocaleString()}</Text>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.checkoutBtn}
           onPress={() => {
             if (totalUnits === 0) {

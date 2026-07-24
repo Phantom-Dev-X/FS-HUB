@@ -1,6 +1,7 @@
 // HOME - FINAL CLEAN ZERO FAKE - NO DUMMY 245, NO FAKE NUMBERS - REAL DATA ONLY FROM SUPABASE
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -34,8 +35,8 @@ export default function DashboardScreen() {
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      setLoading(true);
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -43,48 +44,83 @@ export default function DashboardScreen() {
           const { latitude, longitude } = location.coords;
           OrderStore.repLocation = { latitude, longitude };
           RouteStore.repLocation = { latitude, longitude };
-          setRepCoordinates({ latitude, longitude });
-          setLocationStatus('GPS Active 🟢');
+          if (active) {
+            setRepCoordinates({ latitude, longitude });
+            setLocationStatus('GPS Active 🟢');
+          }
         } else {
-          setLocationStatus('Permission Denied');
+          if (active) setLocationStatus('Permission Denied');
         }
-      } catch { setLocationStatus('Ready'); }
-
-      try {
-        const session = await DatabaseEngine.getSession();
-        if (session) {
-          setAgent({
-            name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name || 'Field Officer',
-            id: session.id,
-            role: 'Field Officer',
-            territory: session.zone || session.territory || 'Ikeja Commercial Zone',
-            initials: session.initials || session.name?.substring(0,2).toUpperCase() || 'FO',
-            avatar: session.avatar || null,
-            email: session.email,
-          });
-
-          // Fetch ONLY my clients from Supabase (big company - reps see only own)
-          const myClients = await DatabaseEngine.getClientsByRep(session.id);
-          setMyClientsCount(myClients.length);
-          OrderStore.clients = myClients;
-
-          // Fetch ONLY my orders from Supabase
-          const myOrders = await DatabaseEngine.getOrdersByRep(session.id);
-          setMyOrdersCount(myOrders.length);
-
-          // Offline orders count
-          const offline = await DatabaseEngine.getOfflineOrders();
-          setOfflineCount(offline.length);
-        } else {
-          setMyClientsCount(0);
-          setMyOrdersCount(0);
-        }
-      } catch (e) {
-        console.log('Home load error', e.message);
+      } catch {
+        if (active) setLocationStatus('Ready');
       }
-      setLoading(false);
     })();
+    return () => {
+      active = false;
+    };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const refreshHomeData = async () => {
+        setLoading(true);
+        try {
+          const session = await DatabaseEngine.getSession();
+          if (session) {
+            if (active) {
+              setAgent({
+                name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name || 'Field Officer',
+                id: session.id,
+                role: 'Field Officer',
+                territory: session.zone || session.territory || 'Ikeja Commercial Zone',
+                initials: session.initials || session.name?.substring(0,2).toUpperCase() || 'FO',
+                avatar: session.avatar || null,
+                email: session.email,
+              });
+            }
+
+            // Fetch ONLY my clients from Supabase (big company - reps see only own)
+            const myClients = await DatabaseEngine.getClientsByRep(session.id);
+            if (active) {
+              setMyClientsCount(myClients.length);
+              OrderStore.clients = myClients;
+            }
+
+            // Fetch ONLY my orders from Supabase
+            const myOrders = await DatabaseEngine.getOrdersByRep(session.id);
+            if (active) {
+              setMyOrdersCount(myOrders.length);
+            }
+
+            // Offline orders count
+            const offline = await DatabaseEngine.getOfflineOrders();
+            if (active) {
+              setOfflineCount(offline.length);
+            }
+          } else {
+            if (active) {
+              setMyClientsCount(0);
+              setMyOrdersCount(0);
+              setOfflineCount(0);
+            }
+          }
+        } catch (e) {
+          console.log('Home load error', e.message);
+        }
+        if (active) {
+          setLoading(false);
+        }
+      };
+
+      refreshHomeData();
+
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const currentRegion = {
     latitude: repCoords.latitude,
@@ -109,7 +145,7 @@ export default function DashboardScreen() {
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         {/* AGENT HEADER - REAL DATA ONLY */}
         <View style={styles.agentHeader}>
           <View style={styles.agentRow}>
@@ -127,7 +163,7 @@ export default function DashboardScreen() {
         {/* DASHBOARD TITLE - REAL COUNTS ONLY, NO FAKE 245 */}
         <Text style={styles.dashboardTitle}>FS HUB DASHBOARD</Text>
         <Text style={styles.dashboardSub}>
-          {loading ? 'Loading your real data from Supabase...' : `${myClientsCount} clients you onboarded • ${myOrdersCount} orders you took • GPS: ${locationStatus}`}
+          {loading ? 'Loading your workspace...' : `${myClientsCount} clients • ${myOrdersCount} orders • GPS: ${locationStatus}`}
         </Text>
 
         {/* 2x2 STATS GRID - REAL DATA ONLY, NO DUMMY +18% OR 245 */}
@@ -136,9 +172,9 @@ export default function DashboardScreen() {
             <View style={styles.statTopRow}>
               <View style={styles.statIconBox}><Ionicons name="people" size={18} color="#2563EB" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>My Clients</Text>
+                <Text style={styles.statLabel}>Active Accounts</Text>
                 <Text style={styles.statNumber}>{myClientsCount}</Text>
-                <Text style={styles.statExtra}>{myClientsCount === 0 ? 'No clients yet' : 'Real from Supabase'}</Text>
+                <Text style={styles.statExtra}>{myClientsCount === 0 ? 'No clients yet' : 'Active accounts'}</Text>
               </View>
             </View>
           </View>
@@ -179,15 +215,15 @@ export default function DashboardScreen() {
 
         {/* LIVE TERRITORY RADAR */}
         <View style={styles.radarCard}>
-          <Text style={styles.radarTitle}>Live Territory Radar - Your Clients Only</Text>
-          <Text style={styles.radarSub}>Blue = You • Red = Your {myClientsCount} clients • From Supabase filtered by your Rep ID</Text>
+          <Text style={styles.radarTitle}>Live Territory Radar</Text>
+          <Text style={styles.radarSub}>Blue = You • Red = Your clients</Text>
           <View style={styles.mapWrapper}>
             {Platform.OS === 'web' || !MapView ? (
               <View style={styles.webMapFallback}>
                 <Ionicons name="map-outline" size={32} color="#2563EB" />
                 <Text style={styles.webMapTitle}>Your Territory Map</Text>
                 <Text style={styles.webMapSub}>Lat {repCoords.latitude.toFixed(4)} | Lon {repCoords.longitude.toFixed(4)}</Text>
-                <Text style={styles.webMapSmall}>Shows only {myClientsCount} clients you onboarded (rep_id = {agent?.id || 'your ID'}) - Admin sees all</Text>
+                <Text style={styles.webMapSmall}>Shows your assigned client network</Text>
                 <TouchableOpacity style={styles.viewMapBtn} onPress={() => router.push('/territories')}>
                   <Text style={styles.viewMapText}>View Full Map →</Text>
                 </TouchableOpacity>
@@ -208,19 +244,19 @@ export default function DashboardScreen() {
           <View style={styles.cleanBanner}>
             <Ionicons name="rocket-outline" size={24} color="#10B981" />
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.cleanTitle}>Clean Production - Zero Fake Data</Text>
-              <Text style={styles.cleanSub}>No dummy 245 clients. You have {myClientsCount} real clients from Supabase. Tap Add New Client to onboard first real store - it will backup to Supabase instantly and admin will see it.</Text>
+              <Text style={styles.cleanTitle}>Build your client network</Text>
+              <Text style={styles.cleanSub}>Add your first client to begin planning visits, managing locations, and taking orders.</Text>
             </View>
           </View>
         )}
 
-        <Text style={styles.sectionHeading}>DAILY FIELD ACTIONS - REAL</Text>
+        <Text style={styles.sectionHeading}>DAILY FIELD ACTIONS</Text>
 
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/checkin')}>
           <View style={styles.actionIconBox}><Ionicons name="location-outline" size={22} color="#2563EB" /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>Client Check-In ({myClientsCount})</Text>
-            <Text style={styles.actionSub}>Select from your {myClientsCount} real clients only</Text>
+            <Text style={styles.actionSub}>Select a client and begin a verified visit</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
@@ -229,7 +265,7 @@ export default function DashboardScreen() {
           <View style={styles.actionIconBox}><Ionicons name="person-add-outline" size={22} color="#10B981" /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>Add New Client</Text>
-            <Text style={styles.actionSub}>Onboard store → Saves to Supabase fshub_clients with your rep_id</Text>
+            <Text style={styles.actionSub}>Register a store with its contact and verified location</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
@@ -238,7 +274,7 @@ export default function DashboardScreen() {
           <View style={styles.actionIconBox}><Ionicons name="map-outline" size={22} color="#F59E0B" /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>My Territories Map</Text>
-            <Text style={styles.actionSub}>View map of only your {myClientsCount} clients</Text>
+            <Text style={styles.actionSub}>View and manage your assigned client locations</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
@@ -247,7 +283,7 @@ export default function DashboardScreen() {
           <View style={styles.actionIconBox}><Ionicons name="sync-outline" size={22} color="#A855F7" /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>Sync Offline Orders ({offlineCount})</Text>
-            <Text style={styles.actionSub}>Push offline orders to Supabase, then wipe local queue</Text>
+            <Text style={styles.actionSub}>Upload pending orders and refresh your field data</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>

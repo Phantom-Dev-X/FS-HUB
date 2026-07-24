@@ -1,8 +1,8 @@
 // FS HUB INVENTORY - ZERO FAKE, WHITE PREMIUM ELEGANT, FIXED TEXT ERROR
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
@@ -18,17 +18,23 @@ export default function InventoryScreen() {
 
   const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display & Retail'];
 
-  // Load real catalog from DB - ZERO FAKE on first install
-  useEffect(() => {
-    (async () => {
-      const localCatalog = await DatabaseEngine.getCatalog();
-      const memoryCatalog = OrderStore.catalog;
-      const combined = [...localCatalog, ...memoryCatalog];
-      // Deduplicate by id
-      const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-      setProducts(unique);
-    })();
-  }, []);
+  // Load real catalog from DB every time screen becomes focused
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const fetchCatalog = async () => {
+        const cloudCatalog = await DatabaseEngine.getCatalog();
+        if (active) {
+          OrderStore.catalog = cloudCatalog;
+          setProducts(cloudCatalog);
+        }
+      };
+      fetchCatalog();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode?.includes(searchQuery);
@@ -61,11 +67,11 @@ export default function InventoryScreen() {
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.mainTitle}>📦 Inventory</Text>
-            <Text style={styles.sub}>White Premium • {products.length} real products • Zero fake</Text>
+            <Text style={styles.sub}>{products.length} products available in the field catalog</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
             <Ionicons name="home-outline" size={18} color="#2563EB" />
@@ -78,7 +84,7 @@ export default function InventoryScreen() {
           <View style={styles.statBox}>
             <Ionicons name="cube-outline" size={20} color="#2563EB" />
             <Text style={styles.statNum}>{products.length} Products</Text>
-            <Text style={styles.statLabel}>Real Catalog</Text>
+            <Text style={styles.statLabel}>Field Catalog</Text>
           </View>
           <View style={styles.statBox}>
             <Ionicons name="warning-outline" size={20} color="#F59E0B" />
