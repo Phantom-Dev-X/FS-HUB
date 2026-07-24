@@ -105,24 +105,13 @@ export default function InventoryScreen() {
           })}
         </ScrollView>
 
-        {/* Clear button for old dummy stocks */}
-        {products.length > 0 && (
-          <TouchableOpacity onPress={handleClearDummyStocks} style={styles.clearBtn}>
-            <Ionicons name="trash-outline" size={14} color="#EF4444" />
-            <Text style={styles.clearText}> Clear All Stock (Fix Dummy)</Text>
-          </TouchableOpacity>
-        )}
-
         {/* Empty state - premium */}
         {filteredProducts.length === 0 ? (
           <View style={styles.emptyBox}>
             <LinearGradient colors={['#EFF6FF', '#FFFFFF']} style={styles.emptyGradient}>
               <Text style={{ fontSize: 40 }}>📦</Text>
               <Text style={styles.emptyTitle}>No Products Yet</Text>
-              <Text style={styles.emptySub}>Your inventory starts 100% clean. Add real products via Admin → Catalog tab. Old dummy stocks can be cleared with button above.</Text>
-              <TouchableOpacity style={styles.emptyActionBtn} onPress={() => router.push('/admin')}>
-                <Text style={styles.emptyActionText}>Go to Admin Portal → Add Products</Text>
-              </TouchableOpacity>
+              <Text style={styles.emptySub}>No products are currently available. Please contact your administrator or warehouse manager.</Text>
             </LinearGradient>
           </View>
         ) : (

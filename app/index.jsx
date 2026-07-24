@@ -42,9 +42,6 @@ export default function LoginScreen() {
   };
 
   const validatePassword = (pwd) => {
-    if (repId.toLowerCase().trim() === 'peterpatrick@gmail.com' && pwd === 'fshubadmin') {
-      return { valid: true, checks: { length: true, uppercase: true, lowercase: true, number: true, special: true }, errors: [], message: '' };
-    }
     const checks = {
       length: pwd.length >= 8,
       uppercase: /[A-Z]/.test(pwd),
@@ -70,7 +67,7 @@ export default function LoginScreen() {
   const handlePasswordChange = (text) => {
     setPassword(text);
     const result = validatePassword(text);
-    if (text && !result.valid && !(repId.toLowerCase().trim() === 'peterpatrick@gmail.com' && text === 'fshubadmin')) {
+    if (text && !result.valid) {
       setPasswordError(result.message);
     } else {
       setPasswordError('');
@@ -80,8 +77,8 @@ export default function LoginScreen() {
   const handleToggleAdminMode = () => {
     if (userType === 'agent') {
       setUserType('admin');
-      setRepId('peterpatrick@gmail.com');
-      setPassword('fshubadmin');
+      setRepId('');
+      setPassword('');
       setEmailError('');
       setPasswordError('');
     } else {
@@ -97,14 +94,13 @@ export default function LoginScreen() {
     const emailErr = validateEmail(repId);
     const pwdResult = validatePassword(password);
     setEmailError(emailErr);
-    const isPrimaryAdmin = repId.toLowerCase().trim() === 'peterpatrick@gmail.com' && password === 'fshubadmin';
-    if (!isPrimaryAdmin && !pwdResult.valid) setPasswordError(pwdResult.message);
+    if (!pwdResult.valid) setPasswordError(pwdResult.message);
 
     if (emailErr) {
       Alert.alert('Fix Email ⚠️', emailErr);
       return;
     }
-    if (!isPrimaryAdmin && !pwdResult.valid) {
+    if (!pwdResult.valid) {
       Alert.alert('Weak Password 🔒', `Password must have:\n• At least 8 chars\n• Uppercase (A-Z)\n• Lowercase (a-z)\n• Number (0-9)\n• Special char (!@#$)\n\nIssues:\n${pwdResult.message}`);
       return;
     }
@@ -118,30 +114,15 @@ export default function LoginScreen() {
     try {
       // ADMIN MODE
       if (userType === 'admin') {
-        if (isPrimaryAdmin) {
-          // Primary super admin allowed always
-          await DatabaseEngine.saveSession({ id: 'ADM-001', name: 'Peter Patrick', email: 'peterpatrick@gmail.com', role: 'Primary Super Admin' });
-          setIsLoading(false);
-          Alert.alert('👑 Primary Super Admin Unlocked!', 'Welcome back, Mr. Peter Patrick!', [{ text: 'Open Admin Suite 🚀', onPress: () => router.replace('/admin') }]);
+        const adminResult = await DatabaseEngine.verifyAdminCredentials(repId, password);
+        setIsLoading(false);
+        if (!adminResult.success) {
+          Alert.alert('Admin Login Failed', adminResult.message);
           return;
-        } else {
-          // Check if other admin exists in storage (future)
-          // For now, allow any admin email that is not primary but exists in admin list? We check reps as well
-          // If you created additional admins via admin portal, they would be in ADMINS key - we check
-          const adminsData = await (await import('@react-native-async-storage/async-storage')).default.getItem('@fshub_table_admins');
-          const admins = adminsData ? JSON.parse(adminsData) : [];
-          const foundAdmin = admins.find(a => a.email?.toLowerCase() === repId.toLowerCase().trim());
-          if (foundAdmin) {
-            await DatabaseEngine.saveSession(foundAdmin);
-            setIsLoading(false);
-            Alert.alert('🏢 Admin Access Granted!', `Welcome ${foundAdmin.name}!`, [{ text: 'Open Admin Suite 🚀', onPress: () => router.replace('/admin') }]);
-            return;
-          } else {
-            setIsLoading(false);
-            Alert.alert('Admin Not Found ❌', `No admin account found for "${repId}". Only peterpatrick@gmail.com is primary, or create new admin inside admin portal after logging in as primary.`);
-            return;
-          }
         }
+        await DatabaseEngine.saveSession(adminResult.admin);
+        Alert.alert('Admin Access Granted', `Welcome ${adminResult.admin.name}!`, [{ text: 'Open Admin Suite', onPress: () => router.replace('/admin') }]);
+        return;
       }
 
       // AGENT MODE - MUST EXIST IN DATABASE - THIS FIXES "LOGIN WITHOUT ACCOUNT"

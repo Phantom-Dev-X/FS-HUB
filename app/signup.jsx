@@ -13,7 +13,9 @@ export default function SignupScreen() {
   const { isDark, colors } = useTheme();
   
   const [fullName, setFullName] = useState('');
-  const [repId, setRepId] = useState('REP-2050');
+  // Keep this empty: a shared prefilled ID (formerly REP-2050) caused every
+  // subsequent signup to collide with the first account's primary key.
+  const [repId, setRepId] = useState('');
   const [territory, setTerritory] = useState('Ikeja Commercial Zone');
   const [gmail, setGmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,6 +53,12 @@ export default function SignupScreen() {
       return;
     }
 
+    const normalizedRepId = repId.trim().toUpperCase();
+    if (!/^[A-Z0-9-]{3,30}$/.test(normalizedRepId)) {
+      Alert.alert('Invalid Rep ID ⚠️', 'Use 3–30 letters, numbers, or hyphens, for example REP-2051.');
+      return;
+    }
+
     const emailErr = validateEmail(gmail);
     if (emailErr) {
       Alert.alert('Invalid Email ⚠️', emailErr);
@@ -71,7 +79,7 @@ export default function SignupScreen() {
     setIsLoading(true);
     const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
     const newOfficerProfile = {
-      id: repId.trim(),
+      id: normalizedRepId,
       fullName: fullName.trim(),
       name: `${fullName.trim()} (Field Officer)`,
       zone: `${territory.trim()} • Route #${Math.floor(10 + Math.random()*80)}`,

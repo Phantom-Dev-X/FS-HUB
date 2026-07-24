@@ -150,22 +150,83 @@ export const DatabaseEngine = {
         if (!foundFallback) {
           return { success: false, message: `Account not found for "${inputIdOrEmail}". Please sign up first!` };
         }
-        // Check password if available
-        if (foundFallback.password && foundFallback.password !== inputPassword) {
-          return { success: false, message: 'Incorrect password.' };
+        if (!foundFallback.password) {
+          return { success: false, message: 'This account has no login password. Please contact an administrator or create a new account.' };
+        }
+        if (foundFallback.password !== inputPassword) {
+          return { success: false, message: 'Incorrect password. Please check your credentials and try again.' };
         }
         return { success: true, rep: foundFallback };
       }
 
       const found = reps[0];
-      if (found.password && found.password !== inputPassword) {
-        return { success: false, message: 'Incorrect password.' };
+      // Never allow an account with no password to authenticate. Older code
+      // treated a NULL password as a successful match, which could let anyone
+      // log in from another phone by knowing only the Rep ID/email.
+      if (!found.password) {
+        return { success: false, message: 'This account has no login password. Please contact an administrator or create a new account.' };
+      }
+      if (found.password !== inputPassword) {
+        return { success: false, message: 'Incorrect password. Please check your credentials and try again.' };
       }
 
       return { success: true, rep: found };
     } catch (e) {
       return { success: false, message: `Internet required to login. Error: ${e.message}` };
     }
+  },
+
+  uploadImage: async function(uri, storagePath) {
+    try {
+      const localResponse = await fetch(uri);
+      const imageBlob = await localResponse.blob();
+      const response = await fetch(`https://evcbqsgznbrzojjbtnfd.supabase.co/storage/v1/object/fshub-media/${storagePath}`, {
+        method: 'POST',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Content-Type': imageBlob.type || 'image/jpeg',
+          'x-upsert': 'true'
+        },
+        body: imageBlob
+      });
+      const text = await response.text();
+      return response.ok ? { success: true, path: storagePath } : { success: false, error: `Storage error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: `Image upload failed: ${e.message}` };
+    }
+  },
+
+  saveCheckin: async function(checkin) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_checkins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}`, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(checkin)
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) { return { success: false, error: e.message }; }
+  },
+
+  verifyAdminCredentials: async function(email, password) {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.adminsTable}?select=*&email=eq.${encodeURIComponent(normalizedEmail)}`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) return { success: false, message: `Admin database error ${response.status}.` };
+      const admins = await response.json();
+      const admin = admins[0];
+      if (!admin) return { success: false, message: 'Admin account not found.' };
+      if (!admin.password) return { success: false, message: 'This admin has no password configured. Set it securely in Supabase first.' };
+      if (admin.password !== password) return { success: false, message: 'Incorrect admin password.' };
+      return { success: true, admin: { ...admin, accountType: 'admin' } };
+    } catch (e) { return { success: false, message: `Could not verify admin: ${e.message}` }; }
+  },
+
+  isAdminSession: function(session) {
+    return Boolean(session && (session.accountType === 'admin' || String(session.id || '').startsWith('ADM-')));
   },
 
   // CLIENTS
@@ -185,6 +246,12 @@ export const DatabaseEngine = {
         business_type: clientObject.businessType || '',
         phone: clientObject.phone || '',
         standing: clientObject.standing || 'Good Standing 🟢',
+        latitude: clientObject.latitude,
+        longitude: clientObject.longitude,
+        location_accuracy_m: clientObject.location_accuracy_m,
+        location_method: clientObject.location_method,
+        location_captured_at: clientObject.location_captured_at,
+        storefront_photo_path: clientObject.storefront_photo_path,
         created_at: new Date().toISOString()
       };
 
@@ -254,8 +321,65 @@ export const DatabaseEngine = {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?select=*`;
       const response = await fetch(url, { method: 'GET', headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` } });
       if (!response.ok) return [];
-      return await response.json();
+      const products = await response.json();
+      return products.map(product => ({
+        ...product,
+        price: Number(product.unit_price ?? product.price ?? 0),
+        stock: Number(product.warehouse_stock ?? product.stock ?? 0)
+      }));
     } catch { return []; }
+  },
+
+  addNewProductToCatalog: async function(productObject) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          id: productObject.id,
+          name: productObject.name,
+          category: productObject.category,
+          unit_price: Number(productObject.unit_price ?? productObject.price ?? 0),
+          warehouse_stock: Number(productObject.warehouse_stock ?? productObject.stock ?? 0),
+          barcode: productObject.barcode || null,
+          status: productObject.status || 'In Stock',
+          created_at: productObject.created_at || new Date().toISOString()
+        })
+      });
+      const text = await response.text();
+      return response.ok
+        ? { success: true }
+        : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: `Internet required: ${e.message}` };
+    }
+  },
+
+  updateProductStock: async function(productId, quantity) {
+    try {
+      const encodedId = encodeURIComponent(productId);
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?id=eq.${encodedId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ warehouse_stock: Number(quantity) })
+      });
+      const text = await response.text();
+      return response.ok
+        ? { success: true }
+        : { success: false, error: `Supabase error ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: `Internet required: ${e.message}` };
+    }
   },
 
   // OFFLINE ORDERS ONLY - As you requested
@@ -282,13 +406,24 @@ export const DatabaseEngine = {
       const pendingOrders = await this.getOfflineOrders();
       if (pendingOrders.length === 0) return { success: true, count: 0, message: 'No offline orders.' };
       let successCount = 0;
+      const failedOrders = [];
       for (const order of pendingOrders) {
         const pushed = await this._pushOrderToSupabase(order);
         if (pushed) successCount++;
+        else failedOrders.push(order);
       }
-      await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify([]));
-      console.log(`[Offline] Wiped after sync ${successCount} orders`);
-      return { success: true, count: successCount, message: `Synced ${successCount} and wiped local.` };
+      // Keep failed orders on the device so a partial network/database failure
+      // can never silently destroy a salesperson's order.
+      await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify(failedOrders));
+      const failedCount = failedOrders.length;
+      return {
+        success: failedCount === 0,
+        count: successCount,
+        failedCount,
+        message: failedCount === 0
+          ? `Synced ${successCount} order(s) successfully.`
+          : `Synced ${successCount}; ${failedCount} order(s) remain pending. Please retry.`
+      };
     } catch (e) { return { success: false, error: e.message }; }
   },
 

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
+import { DatabaseEngine } from './_DatabaseEngine';
 
 // Look right right here: We import our automated background email service!
 import { EmailService } from './_EmailService';
@@ -83,7 +84,30 @@ export default function CheckoutSummaryScreen() {
 
     setIsEmailSending(true);
 
-    const clientEmail = client.email || 'shoprite.ikeja@gmail.com';
+    // Persist the order before attempting non-essential email delivery. It is
+    // queued locally and the Sync screen uploads it to Supabase without risking
+    // data loss when the phone has poor connectivity.
+    const savedOrder = await DatabaseEngine.saveOfflineOrder({
+      invoiceNumber,
+      store: client.name,
+      clientName: client.name,
+      repId: OrderStore.currentAgent?.id,
+      payableTotal: finalPayableTotal,
+      grandTotal,
+      cartItems,
+      gpsVerified: client.gpsVerified || client.gps_coordinates || '',
+      paymentCycle,
+      deliveryUrgency,
+      orderNotes
+    });
+
+    if (!savedOrder.success) {
+      setIsEmailSending(false);
+      Alert.alert('Order Save Failed', savedOrder.error || 'The order could not be saved. Please try again.');
+      return;
+    }
+
+    const clientEmail = client.email || client.registered_email || '';
 
     // Call our automated background server email service!
     const emailResponse = await EmailService.sendOrderReceiptEmail({
@@ -100,9 +124,14 @@ export default function CheckoutSummaryScreen() {
 
     setIsEmailSending(false);
 
+    const emailWasSent = Boolean(emailResponse?.success);
     Alert.alert(
-      `🎉 ORDER SAVED & AUTOMATED EMAIL SENT (#${invoiceNumber})!`,
-      `Store: ${client.name}\nPayable Total: ₦${finalPayableTotal.toLocaleString()} (${totalUnits} Units)\n\n📧 Automated Server Confirmation:\nOur cloud server (${EmailService.config.senderEmail}) has automatically dispatched the official itemized receipt straight to "${clientEmail}"! No manual email sending required.`,
+      emailWasSent
+        ? `🎉 ORDER SAVED & EMAIL SENT (#${invoiceNumber})!`
+        : `✅ ORDER SAVED (#${invoiceNumber})`,
+      `Store: ${client.name}\nPayable Total: ₦${finalPayableTotal.toLocaleString()} (${totalUnits} Units)\n\n${emailWasSent
+        ? `📧 Receipt sent to "${clientEmail}".`
+        : `The order is safely queued for Supabase sync. Email was not sent${emailResponse?.message ? `: ${emailResponse.message}` : '.'}`}`, 
       [
         {
           text: 'Return to Hub 🏠',
