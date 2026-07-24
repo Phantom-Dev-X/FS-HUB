@@ -31,7 +31,7 @@ export const getColors = (isDark) => ({
 });
 
 export const ThemeProvider = ({ children }) => {
-  const [isDark, setIsDark] = useState(true); // default dark like original
+  const [isDark, setIsDark] = useState(false); // default WHITE premium elegant as user requested
 
   // Load saved theme on app start
   useEffect(() => {

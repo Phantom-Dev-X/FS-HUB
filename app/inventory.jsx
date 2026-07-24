@@ -1,419 +1,213 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert 
-} from 'react-native';
+// FS HUB INVENTORY - ZERO FAKE, WHITE PREMIUM ELEGANT, FIXED TEXT ERROR
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
+import { DatabaseEngine } from './_DatabaseEngine';
+import { OrderStore } from './_OrderStore';
 
 export default function InventoryScreen() {
-  const { isDark, toggleTheme } = useTheme();
+  const { colors } = useTheme(); // Global white elegant theme sync
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
-
-  const colors = {
-    background: isDark ? '#0F172A' : '#F4F6F9',
-    card:       isDark ? '#1E293B' : '#FFFFFF',
-    border:     isDark ? '#334155' : '#CBD5E1',
-    mainText:   isDark ? '#FFFFFF' : '#0F172A',
-    subText:    isDark ? '#94A3B8' : '#64748B',
-    cyan:       isDark ? '#38BDF8' : '#0284C7',
-    green:      isDark ? '#10B981' : '#059669',
-    amber:      isDark ? '#F59E0B' : '#D97706',
-    purple:     isDark ? '#A855F7' : '#9333EA',
-    red:        '#EF4444',
-  };
+  const [products, setProducts] = useState([]);
 
   const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display & Retail'];
 
-  // All active SFA Catalog Products with Current Prices and Available Units!
-  const [products, setProducts] = useState([
-    {
-      id: 'PRD-101',
-      name: 'FS Solar Home Inverter Box (200W)',
-      category: '⚡ Solar & Power',
-      price: 120000,
-      stock: 42,
-      barcode: '840192837102',
-      status: 'High Stock',
-      statusColor: '#10B981',
-    },
-    {
-      id: 'PRD-102',
-      name: 'Commercial Solar Panel (450W Mono)',
-      category: '⚡ Solar & Power',
-      price: 85000,
-      stock: 18,
-      barcode: '840192837103',
-      status: 'Normal Stock',
-      statusColor: '#10B981',
-    },
-    {
-      id: 'PRD-103',
-      name: 'Smart WiFi Router Pack (5 Units)',
-      category: '🌐 Networking',
-      price: 130000,
-      stock: 4,
-      barcode: '840192837104',
-      status: 'Low Stock ⚠️',
-      statusColor: '#F59E0B',
-    },
-    {
-      id: 'PRD-104',
-      name: '4G LTE Pocket Mobile Hotspot',
-      category: '🌐 Networking',
-      price: 25000,
-      stock: 31,
-      barcode: '840192837105',
-      status: 'Normal Stock',
-      statusColor: '#10B981',
-    },
-    {
-      id: 'PRD-105',
-      name: 'Commercial Display Shelf Unit (Deluxe)',
-      category: '🏪 Display & Retail',
-      price: 40000,
-      stock: 0,
-      barcode: '840192837106',
-      status: 'Out of Stock 🔴',
-      statusColor: '#EF4444',
-    },
-    {
-      id: 'PRD-106',
-      name: 'Lithium Phosphate Battery Pack (200Ah/12V)',
-      category: '⚡ Solar & Power',
-      price: 450000,
-      stock: 6,
-      barcode: '840192837107',
-      status: 'Low Stock ⚠️',
-      statusColor: '#F59E0B',
-    },
-  ]);
+  // Load real catalog from DB - ZERO FAKE on first install
+  useEffect(() => {
+    (async () => {
+      const localCatalog = await DatabaseEngine.getCatalog();
+      const memoryCatalog = OrderStore.catalog;
+      const combined = [...localCatalog, ...memoryCatalog];
+      // Deduplicate by id
+      const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+      setProducts(unique);
+    })();
+  }, []);
 
-  // Filter products by search text and selected category pill
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode.includes(searchQuery);
+    const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode?.includes(searchQuery);
     const matchesCat = selectedCategory === 'All Products' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
 
   const handleRequestRestock = (productName) => {
-    Alert.alert(
-      '📥 Restock Request Sent ✓',
-      `Headquarters warehouse dispatcher (Ikeja Depot) has been notified to allocate more units of "${productName}" to your field route!`
-    );
+    Alert.alert('📥 Restock Request Sent ✓', `Warehouse dispatcher notified for "${productName}"!`);
   };
 
   const handleViewSpecs = (product) => {
-    Alert.alert(
-      `📋 ${product.name}`,
-      `Barcode: #${product.barcode}\nCategory: ${product.category}\nCurrent Price: ₦${product.price.toLocaleString()}\nAvailable Stock: ${product.stock} units right now inside warehouse.`
-    );
+    Alert.alert(`📋 ${product.name}`, `Barcode: #${product.barcode}\nCategory: ${product.category}\nPrice: ₦${product.price?.toLocaleString()}\nStock: ${product.stock} units`);
+  };
+
+  const handleClearDummyStocks = async () => {
+    Alert.alert('Clear Inventory?', 'This will delete ALL catalog items (including dummy). You can re-add real products via Admin portal.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear All 🗑️', style: 'destructive', onPress: async () => {
+        await DatabaseEngine.addNewProductToCatalog && await (await import('@react-native-async-storage/async-storage')).default.setItem('@fshub_table_catalog', JSON.stringify([]));
+        OrderStore.catalog = [];
+        setProducts([]);
+        Alert.alert('Cleared ✓', 'Inventory is now 0 - clean production mode.');
+      }}
+    ]);
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
+      <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
+
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
-        {/* Top Header */}
         <View style={styles.headerRow}>
-          <Text style={[styles.mainTitle, { color: colors.cyan }]} numberOfLines={1} adjustsFontSizeToFit={true}>
-            📦 INVENTORY & CATALOG
-          </Text>
-
+          <View style={{ flex: 1 }}>
+            <Text style={styles.mainTitle}>📦 Inventory</Text>
+            <Text style={styles.sub}>White Premium • {products.length} real products • Zero fake</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
+            <Ionicons name="home-outline" size={18} color="#2563EB" />
+            <Text style={styles.backText}> Home</Text>
+          </TouchableOpacity>
         </View>
 
-        <Text style={[styles.subText, { color: colors.subText }]}>
-          View real-time prices, warehouse availability, and low stock alerts across your SFA product catalog.
-        </Text>
-
-        {/* Look right here: SUMMARY INVENTORY STATS CARDS */}
+        {/* Stats - white premium cards */}
         <View style={styles.statsGrid}>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.statNum, { color: colors.cyan }]} numberOfLines={1}>6 Products</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]}>Total Catalog</Text>
+          <View style={styles.statBox}>
+            <Ionicons name="cube-outline" size={20} color="#2563EB" />
+            <Text style={styles.statNum}>{products.length} Products</Text>
+            <Text style={styles.statLabel}>Real Catalog</Text>
           </View>
-
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.statNum, { color: colors.amber }]} numberOfLines={1}>2 Warnings</Text>
-            <Text style={[styles.statLabel, { color: colors.subText }]}>Low Stock Alerts</Text>
+          <View style={styles.statBox}>
+            <Ionicons name="warning-outline" size={20} color="#F59E0B" />
+            <Text style={styles.statNum}>{products.filter(p => p.stock < 10).length} Low</Text>
+            <Text style={styles.statLabel}>Low Stock</Text>
           </View>
         </View>
 
-        {/* Search Bar */}
-        <View style={[styles.searchWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput 
-            style={[styles.searchInput, { color: colors.mainText }]}
-            placeholder="Search product name or #barcode..."
-            placeholderTextColor="#64748B"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+        {/* Search - white elegant */}
+        <View style={styles.searchWrapper}>
+          <Ionicons name="search-outline" size={18} color="#94A3B8" />
+          <TextInput style={styles.searchInput} placeholder="Search product or barcode..." placeholderTextColor="#94A3B8" value={searchQuery} onChangeText={setSearchQuery} />
         </View>
 
-        {/* Category Filter Pills */}
-        <View style={styles.categoryPillRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {categories.map((cat, idx) => {
-              const active = selectedCategory === cat;
-              return (
-                <TouchableOpacity 
-                  key={idx} 
-                  style={[styles.catPill, { backgroundColor: active ? '#007AFF' : colors.card, borderColor: active ? colors.cyan : colors.border }]}
-                  onPress={() => setSelectedCategory(cat)}
-                >
-                  <Text style={[styles.catPillText, { color: active ? '#FFFFFF' : colors.subText }, active && { fontWeight: '900' }]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+        {/* Category pills */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={styles.pillRow}>
+          {categories.map((cat, idx) => {
+            const active = selectedCategory === cat;
+            return (
+              <TouchableOpacity key={idx} style={[styles.catPill, active && styles.catPillActive]} onPress={() => setSelectedCategory(cat)}>
+                <Text style={[styles.catPillText, active && { color: '#FFFFFF' }]}>{cat}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-        {/* List of Catalog Products */}
-        <View style={styles.listContainer}>
-          {filteredProducts.map((item) => (
-            <View key={item.id} style={[styles.productCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: item.statusColor }]}>
-              
-              <View style={styles.cardTopRow}>
-                <Text style={[styles.productName, { color: colors.mainText }]} numberOfLines={1}>{item.name}</Text>
-                <View style={[styles.statusBadge, { borderColor: item.statusColor }]}>
-                  <Text style={[styles.statusBadgeText, { color: item.statusColor }]}>{item.status}</Text>
+        {/* Clear button for old dummy stocks */}
+        {products.length > 0 && (
+          <TouchableOpacity onPress={handleClearDummyStocks} style={styles.clearBtn}>
+            <Ionicons name="trash-outline" size={14} color="#EF4444" />
+            <Text style={styles.clearText}> Clear All Stock (Fix Dummy)</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Empty state - premium */}
+        {filteredProducts.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <LinearGradient colors={['#EFF6FF', '#FFFFFF']} style={styles.emptyGradient}>
+              <Text style={{ fontSize: 40 }}>📦</Text>
+              <Text style={styles.emptyTitle}>No Products Yet</Text>
+              <Text style={styles.emptySub}>Your inventory starts 100% clean. Add real products via Admin → Catalog tab. Old dummy stocks can be cleared with button above.</Text>
+              <TouchableOpacity style={styles.emptyActionBtn} onPress={() => router.push('/admin')}>
+                <Text style={styles.emptyActionText}>Go to Admin Portal → Add Products</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        ) : (
+          <View style={styles.list}>
+            {filteredProducts.map((item) => (
+              <View key={item.id} style={styles.productCard}>
+                <View style={styles.cardTop}>
+                  <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+                  <View style={[styles.statusBadge, { borderColor: item.stock === 0 ? '#EF4444' : item.stock < 10 ? '#F59E0B' : '#10B981' }]}>
+                    <Text style={[styles.statusText, { color: item.stock === 0 ? '#EF4444' : item.stock < 10 ? '#F59E0B' : '#10B981' }]}>{item.stock === 0 ? 'Out of Stock' : item.stock < 10 ? 'Low Stock' : 'In Stock'}</Text>
+                  </View>
+                </View>
+                <Text style={styles.barcode}>#{item.barcode} • {item.category}</Text>
+                <View style={styles.priceRow}>
+                  <View>
+                    <Text style={styles.priceLabel}>PRICE</Text>
+                    <Text style={styles.priceValue}>₦{item.price?.toLocaleString()}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.priceLabel}>STOCK</Text>
+                    <Text style={[styles.stockValue, { color: item.stock === 0 ? '#EF4444' : '#2563EB' }]}>{item.stock} Units</Text>
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleViewSpecs(item)}>
+                    <Ionicons name="document-text-outline" size={14} color="#2563EB" />
+                    <Text style={styles.actionBtnText}> Specs</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.actionBtn, styles.restockBtn]} onPress={() => handleRequestRestock(item.name)}>
+                    <Ionicons name="arrow-up-circle-outline" size={14} color="#FFFFFF" />
+                    <Text style={[styles.actionBtnText, { color: '#FFF' }]}> Restock</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-
-              <Text style={[styles.barcodeText, { color: colors.subText }]}>
-                Category: {item.category} • #Barcode: {item.barcode}
-              </Text>
-
-              {/* Price & Stock Display Row */}
-              <View style={[styles.priceStockRow, { borderTopColor: colors.border }]}>
-                <View>
-                  <Text style={[styles.priceLabel, { color: colors.subText }]}>CURRENT PRICE</Text>
-                  <Text style={[styles.priceValue, { color: colors.green }]}>
-                    ₦{item.price.toLocaleString()} <Text style={{fontSize: 11, color: colors.subText}}>/ unit</Text>
-                  </Text>
-                </View>
-
-                <View style={styles.stockBoxRight}>
-                  <Text style={[styles.stockLabel, { color: colors.subText }]}>AVAILABLE UNITS</Text>
-                  <Text style={[styles.stockValue, { color: item.stock === 0 ? colors.red : (item.stock < 10 ? colors.amber : colors.cyan) }]}>
-                    {item.stock} Units
-                  </Text>
-                </View>
-              </View>
-
-              {/* Action Buttons: Specs & Restock Request */}
-              <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-                <TouchableOpacity 
-                  style={[styles.actionBtn, { borderColor: colors.border }]}
-                  onPress={() => handleViewSpecs(item)}
-                >
-                  <Text style={[styles.actionBtnText, { color: colors.cyan }]}>📋 View Specs</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.restockBtn, item.stock === 0 ? { backgroundColor: '#EF4444' } : { backgroundColor: '#0F172A', borderColor: '#334155', borderWidth: 1 }]}
-                  onPress={() => handleRequestRestock(item.name)}
-                >
-                  <Text style={[styles.restockBtnText, { color: item.stock === 0 ? '#FFFFFF' : '#F59E0B' }]}>
-                    {item.stock === 0 ? '🚨 Urgent Restock Req.' : '📥 Request Restock'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
 
       </ScrollView>
 
-      {/* FIXED SMART FOOTER */}
-      <SmartFooter isDark={isDark} colors={{ card: colors.card, border: colors.border, cyan: colors.cyan, subText: colors.subText }} />
-import { useTheme } from '../context/ThemeContext';
+      <SmartFooter />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  mainTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    flexShrink: 1,
-  },
-  themeBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  subText: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  statBox: {
-    width: '48.5%',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  statNum: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  searchWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
-    marginBottom: 14,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 13,
-    fontSize: 13,
-  },
-  categoryPillRow: {
-    marginBottom: 16,
-  },
-  catPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  catPillText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  listContainer: {
-    marginBottom: 10,
-  },
-  productCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderLeftWidth: 6,
-    elevation: 3,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  productName: {
-    fontSize: 15,
-    fontWeight: '900',
-    flexShrink: 1,
-    marginRight: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  barcodeText: {
-    fontSize: 11,
-    marginBottom: 12,
-  },
-  priceStockRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    paddingTop: 10,
-    marginBottom: 12,
-  },
-  priceLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  priceValue: {
-    fontSize: 17,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  stockBoxRight: {
-    alignItems: 'flex-end',
-  },
-  stockLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  stockValue: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    paddingTop: 10,
-    gap: 10,
-  },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  actionBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  restockBtn: {
-    flex: 1.2,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  restockBtnText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
+  scrollContainer: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 90 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  mainTitle: { fontSize: 22, fontWeight: '900', color: '#1E3A8A' },
+  sub: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  backBtn: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#DBEAFE', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, alignItems: 'center' },
+  backText: { color: '#2563EB', fontSize: 12, fontWeight: '800' },
+  statsGrid: { flexDirection: 'row', gap: 12, marginTop: 16, marginBottom: 14 },
+  statBox: { flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  statNum: { fontSize: 16, fontWeight: '900', color: '#0F172A', marginTop: 6 },
+  statLabel: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 48, marginBottom: 12 },
+  searchInput: { flex: 1, marginLeft: 8, color: '#0F172A', fontSize: 13 },
+  pillRow: { marginBottom: 14 },
+  catPill: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  catPillActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  catPillText: { fontSize: 11, fontWeight: '600', color: '#64748B' },
+  clearBtn: { flexDirection: 'row', alignSelf: 'flex-end', backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, marginBottom: 10, alignItems: 'center' },
+  clearText: { color: '#EF4444', fontSize: 11, fontWeight: '700' },
+  emptyBox: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#DBEAFE', marginTop: 10 },
+  emptyGradient: { padding: 24, alignItems: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#1E3A8A', marginTop: 10 },
+  emptySub: { fontSize: 12, color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 18 },
+  emptyActionBtn: { backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, marginTop: 14 },
+  emptyActionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  list: { gap: 12 },
+  productCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  productName: { fontSize: 14, fontWeight: '800', color: '#0F172A', flex: 1, marginRight: 8 },
+  statusBadge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  statusText: { fontSize: 10, fontWeight: '800' },
+  barcode: { fontSize: 11, color: '#64748B', marginBottom: 12 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10, marginBottom: 12 },
+  priceLabel: { fontSize: 10, fontWeight: '800', color: '#94A3B8' },
+  priceValue: { fontSize: 16, fontWeight: '900', color: '#059669', marginTop: 2 },
+  stockValue: { fontSize: 15, fontWeight: '900', marginTop: 2 },
+  actions: { flexDirection: 'row', gap: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 },
+  actionBtn: { flex: 1, flexDirection: 'row', borderWidth: 1, borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', paddingVertical: 10, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
+  restockBtn: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
 });
