@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
-import { SupabaseAuth, getPasswordResetRedirectTo } from './_SupabaseAuth';
+import { SupabaseAuth } from './_SupabaseAuth';
 
 export default function ForgotPasswordScreen() {
   const { isDark, toggleTheme } = useTheme();
@@ -62,7 +62,7 @@ export default function ForgotPasswordScreen() {
   };
 
   // =========================================================================
-  // STEP 1: VERIFY ACCOUNT, THEN GENERATE & DISPATCH REAL 6-DIGIT OTP VIA EMAILJS
+  // STEP 1: SEND SUPABASE EMAIL OTP — works inside Expo Go, no deep link needed.
   // =========================================================================
   const handleSendOtp = async () => {
     const emailErr = validateEmail(repEmail);
@@ -72,35 +72,33 @@ export default function ForgotPasswordScreen() {
     }
 
     setIsLoading(true);
-    const res = await SupabaseAuth.sendPasswordResetEmail(repEmail.trim());
+    const res = await SupabaseAuth.sendEmailOtp(repEmail.trim());
     setIsLoading(false);
 
     if (res.success) {
-      const redirectUrl = getPasswordResetRedirectTo();
+      setStep(2);
+      setInputtedOtp('');
       Alert.alert(
-        '📧 Password Reset Link Sent!',
-        `Supabase sent a secure password reset link to "${repEmail.trim().toLowerCase()}".\n\nBecause you are using Expo Go, open the email on the same phone running Expo Go and tap the link.\n\nReset redirect used:\n${redirectUrl}`,
-        [{ text: 'OK' }]
+        '📧 OTP Code Sent!',
+        `Supabase sent a sign-in OTP code to "${repEmail.trim().toLowerCase()}".\n\nDo NOT tap the link/button. Copy the numeric OTP code from the email and enter it in the app, then choose a new password.`
       );
     } else {
-      Alert.alert('Reset Email Failed ❌', res.message || 'Could not send Supabase password reset email.');
+      Alert.alert('OTP Send Failed ❌', res.message || 'Could not send Supabase OTP email.');
     }
   };
 
   // =========================================================================
-  // STEP 2: VERIFY OTP & RESET SECRET PASSWORD
+  // STEP 2: VERIFY SUPABASE OTP, THEN UPDATE AUTH PASSWORD
   // =========================================================================
   const handleVerifyAndReset = async () => {
     if (!inputtedOtp.trim() || !newPassword || !confirmPassword) {
-      Alert.alert('Incomplete Form ⚠️', 'Please enter your 6-digit OTP code and your new password twice.');
+      Alert.alert('Incomplete Form ⚠️', 'Please enter the email OTP code and your new password twice.');
       return;
     }
 
     const cleanInput = inputtedOtp.trim().replace(/[^0-9]/g, '');
-    const cleanGenerated = generatedOtp.replace(/[^0-9]/g, '');
-
-    if (!generatedOtp || cleanInput !== cleanGenerated) {
-      Alert.alert('Invalid OTP ❌', 'The 6-digit code you entered does not match the verification code sent to your email. Please double-check your inbox.');
+    if (cleanInput.length < 6) {
+      Alert.alert('Invalid OTP ❌', 'Enter the numeric OTP code from your Supabase email.');
       return;
     }
 
@@ -116,17 +114,24 @@ export default function ForgotPasswordScreen() {
     }
 
     setIsLoading(true);
+    const verified = await SupabaseAuth.verifyEmailOtp(repEmail.trim(), cleanInput);
+    if (!verified.success) {
+      setIsLoading(false);
+      Alert.alert('OTP Verification Failed', verified.message || 'The OTP code is incorrect or expired. Please request a new code.');
+      return;
+    }
+
     const update = await SupabaseAuth.updatePassword(newPassword);
     setIsLoading(false);
 
     if (!update.success) {
-      Alert.alert('Password Update Failed', update.message || 'Could not update password in Supabase. Please open the latest reset email link again.');
+      Alert.alert('Password Update Failed', update.message || 'Could not update password in Supabase. Please retry.');
       return;
     }
 
     Alert.alert(
       '🎉 Password Reset Successfully!',
-      `Your Supabase Auth password has been updated. You can now log in with your new password.`,
+      `Your Supabase Auth password has been updated. You can now log in with your email and new password.`,
       [{ text: 'Proceed to Login 🚀', onPress: () => router.replace('/') }]
     );
   };
@@ -148,7 +153,7 @@ export default function ForgotPasswordScreen() {
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>
-          Secure Supabase Auth password reset for FS Hub Field Agents. A reset link will be sent straight to your inbox.
+          Secure Supabase Auth password reset for FS Hub Field Agents. We send an email OTP code, then you type it here to set a new password.
         </Text>
 
         {/* Step Progress Bar */}
@@ -164,7 +169,7 @@ export default function ForgotPasswordScreen() {
           <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.amber }]}>
             <View style={[styles.noteBox, { backgroundColor: colors.background }]}>
               <Text style={styles.noteText}>
-                ℹ️ Enter your registered email below. Supabase will send a secure reset link to your inbox. Open the link on this phone to create a new password.
+                ℹ️ Enter your registered email below. Supabase will send a numeric OTP code to your inbox. Copy the code into this app — no link tapping needed in Expo Go.
               </Text>
             </View>
 
@@ -201,7 +206,7 @@ export default function ForgotPasswordScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.actionBtnText}>⚡ SEND SUPABASE RESET LINK ➔</Text>
+                <Text style={styles.actionBtnText}>⚡ SEND SUPABASE OTP CODE ➔</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -212,17 +217,17 @@ export default function ForgotPasswordScreen() {
           <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.green }]}>
             <View style={[styles.noteBox, { backgroundColor: '#064E3B', borderLeftColor: colors.green }]}>
               <Text style={[styles.noteText, { color: '#A7F3D0' }]}>
-                ✅ OTP Sent to <Text style={{fontWeight: '900', color: '#FFF'}}>{repEmail}</Text>! Check your Gmail right now and enter the 6-digit code below to create your new secret password.
+                ✅ OTP Sent to <Text style={{fontWeight: '900', color: '#FFF'}}>{repEmail}</Text>! Check your email and enter the numeric code below to create your new password. Do not tap the email link/button.
               </Text>
             </View>
 
-            <Text style={[styles.label, { color: colors.green }]}>ENTER 6-DIGIT OTP CODE FROM GMAIL *</Text>
+            <Text style={[styles.label, { color: colors.green }]}>ENTER SUPABASE EMAIL OTP CODE *</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.background, borderColor: colors.green, borderWidth: 1.5, color: colors.mainText, fontSize: 18, fontWeight: '900', letterSpacing: 3, textAlign: 'center' }]}
-              placeholder="e.g. 849-201"
+              placeholder="e.g. 12345678"
               placeholderTextColor="#64748B"
               keyboardType="numeric"
-              maxLength={7}
+              maxLength={10}
               value={inputtedOtp}
               onChangeText={setInputtedOtp}
             />

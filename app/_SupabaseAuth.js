@@ -111,6 +111,34 @@ export const SupabaseAuth = {
     }
   },
 
+  sendEmailOtp: async function(email) {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: { shouldCreateUser: false },
+      });
+      if (error) return { success: false, message: getAuthErrorMessage(error), error };
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
+  verifyEmailOtp: async function(email, token) {
+    try {
+      const cleanToken = String(token || '').replace(/[^0-9]/g, '');
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: cleanToken,
+        type: 'email',
+      });
+      if (error) return { success: false, message: getAuthErrorMessage(error), error };
+      return { success: true, user: data.user, session: data.session };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  },
+
   setSessionFromUrl: async function(url) {
     try {
       const params = parseAuthParamsFromUrl(url);
