@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
-import { SupabaseAuth } from './_SupabaseAuth';
+import { SupabaseAuth, getPasswordResetRedirectTo } from './_SupabaseAuth';
 
 export default function ForgotPasswordScreen() {
   const { isDark, toggleTheme } = useTheme();
@@ -76,9 +76,10 @@ export default function ForgotPasswordScreen() {
     setIsLoading(false);
 
     if (res.success) {
+      const redirectUrl = getPasswordResetRedirectTo();
       Alert.alert(
         '📧 Password Reset Link Sent!',
-        `Supabase sent a secure password reset link to "${repEmail.trim().toLowerCase()}".\n\nOpen the email on this device and tap the link. It should open FS Hub and show the new password screen.`,
+        `Supabase sent a secure password reset link to "${repEmail.trim().toLowerCase()}".\n\nBecause you are using Expo Go, open the email on the same phone running Expo Go and tap the link.\n\nReset redirect used:\n${redirectUrl}`,
         [{ text: 'OK' }]
       );
     } else {

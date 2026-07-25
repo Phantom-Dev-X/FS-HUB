@@ -3,6 +3,7 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import * as ExpoLinking from 'expo-linking';
 import { createClient } from '@supabase/supabase-js';
 
 export const SUPABASE_URL = 'https://evcbqsgznbrzojjbtnfd.supabase.co';
@@ -25,12 +26,16 @@ const getAuthErrorMessage = (error) => {
   return raw;
 };
 
-const getPasswordResetRedirectTo = () => {
-  // Web testing needs an http URL; native builds use the fshub:// deep link.
+export const getPasswordResetRedirectTo = () => {
+  // Web testing needs an http URL.
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin}/reset-password`;
   }
-  return 'fshub://reset-password';
+
+  // Expo Go cannot open the production custom scheme (fshub://) directly.
+  // ExpoLinking.createURL generates the correct runtime URL, e.g.
+  // exp://192.168.x.x:8081/--/reset-password in Expo Go, and fshub://reset-password in a dev/prod build.
+  return ExpoLinking.createURL('/reset-password');
 };
 
 const parseAuthParamsFromUrl = (url) => {
