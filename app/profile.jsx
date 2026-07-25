@@ -88,37 +88,18 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <Text style={[styles.sectionHeading, { color: colors.heading }]}>💰 COMMISSION</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: colors.amber, borderLeftWidth: 6 }]}>
-          <Text style={[styles.commissionLabel, { color: colors.subText }]}>ESTIMATED EARNED</Text>
-          <Text style={[styles.commissionAmount, { color: colors.amber }]}>₦195,000</Text>
-          <Text style={[styles.payoutNotice, { color: colors.mainText }]}>📅 Next Payout: 31st</Text>
-          <View style={[styles.progressTrack, { backgroundColor: colors.background }]}>
-            <View style={[styles.progressBar, { width: '78%', backgroundColor: colors.green }]} />
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={[styles.targetSub, { color: colors.subText }]}>Current: ₦3.9M</Text>
-            <Text style={[styles.targetSub, { color: colors.subText }]}>Target: ₦5.0M</Text>
-          </View>
-        </View>
-
-        <Text style={[styles.sectionHeading, { color: colors.heading }]}>⚙️ FIELD SETTINGS</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.settingRow, { borderBottomColor: colors.border }]}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={[styles.settingTitle, { color: colors.mainText }]}>Auto Background Sync</Text>
-              <Text style={[styles.settingSub, { color: colors.subText }]}>Push local orders to cloud when data on</Text>
+        <TouchableOpacity 
+          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => router.push('/settings')}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View>
+              <Text style={[styles.settingTitle, { color: colors.mainText }]}>Field Settings & Preferences</Text>
+              <Text style={[styles.settingSub, { color: colors.subText }]}>Background sync, GPS watermark, theme</Text>
             </View>
-            <Switch value={offlineAutoSync} onValueChange={setOfflineAutoSync} trackColor={{ false: '#334155', true: '#2563EB' }} thumbColor="#FFFFFF" />
+            <Ionicons name="chevron-forward" size={20} color={colors.subText} />
           </View>
-          <View style={[styles.settingRow, { borderBottomWidth: 0 }]}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={[styles.settingTitle, { color: colors.mainText }]}>GPS Photo Watermark</Text>
-              <Text style={[styles.settingSub, { color: colors.subText }]}>Attach ±3m coordinates to photos</Text>
-            </View>
-            <Switch value={gpsWatermark} onValueChange={setGpsWatermark} trackColor={{ false: '#334155', true: '#10B981' }} thumbColor="#FFFFFF" />
-          </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity style={[styles.logoutBtn, { borderColor: '#EF4444' }]} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color="#EF4444" />

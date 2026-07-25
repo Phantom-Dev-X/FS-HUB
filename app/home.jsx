@@ -1,5 +1,5 @@
 // HOME - FINAL CLEAN ZERO FAKE - NO DUMMY 245, NO FAKE NUMBERS - REAL DATA ONLY FROM SUPABASE
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,11 +26,20 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
   const [locationStatus, setLocationStatus] = useState('Checking GPS...');
+  
+  // Keep previous values to avoid 0 flash
   const [myClientsCount, setMyClientsCount] = useState(0);
   const [offlineCount, setOfflineCount] = useState(0);
   const [myOrdersCount, setMyOrdersCount] = useState(0);
   const [agent, setAgent] = useState(OrderStore.currentAgent);
   const [loading, setLoading] = useState(true);
+
+  // Persist last good values (prevents flash from 0)
+  const lastValues = React.useRef({
+    clients: 0,
+    orders: 0,
+    offline: 0,
+  });
 
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
 
@@ -81,29 +90,41 @@ export default function DashboardScreen() {
               });
             }
 
-            // Fetch ONLY my clients from Supabase (big company - reps see only own)
+            // Fetch ONLY my clients from Supabase
             const myClients = await DatabaseEngine.getClientsByRep(session.id);
-            if (active) {
-              setMyClientsCount(myClients.length);
-              OrderStore.clients = myClients;
-            }
+            const clientCount = myClients.length;
 
             // Fetch ONLY my orders from Supabase
             const myOrders = await DatabaseEngine.getOrdersByRep(session.id);
-            if (active) {
-              setMyOrdersCount(myOrders.length);
-            }
+            const orderCount = myOrders.length;
 
             // Offline orders count
             const offline = await DatabaseEngine.getOfflineOrders();
+            const offlineCountVal = offline.length;
+
             if (active) {
-              setOfflineCount(offline.length);
+              // Only update if different from last known good value (prevents 0 flash)
+              if (clientCount !== lastValues.current.clients) {
+                setMyClientsCount(clientCount);
+                lastValues.current.clients = clientCount;
+              }
+              OrderStore.clients = myClients;
+
+              if (orderCount !== lastValues.current.orders) {
+                setMyOrdersCount(orderCount);
+                lastValues.current.orders = orderCount;
+              }
+
+              if (offlineCountVal !== lastValues.current.offline) {
+                setOfflineCount(offlineCountVal);
+                lastValues.current.offline = offlineCountVal;
+              }
             }
           } else {
             if (active) {
-              setMyClientsCount(0);
-              setMyOrdersCount(0);
-              setOfflineCount(0);
+              setMyClientsCount(lastValues.current.clients);
+              setMyOrdersCount(lastValues.current.orders);
+              setOfflineCount(lastValues.current.offline);
             }
           }
         } catch (e) {
@@ -183,9 +204,9 @@ export default function DashboardScreen() {
             <View style={styles.statTopRow}>
               <View style={styles.statIconBox}><Ionicons name="cart" size={18} color="#10B981" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>Active Cart</Text>
+                <Text style={styles.statLabel}>Items in Cart</Text>
                 <Text style={styles.statNumber}>{totalUnits}</Text>
-                <Text style={styles.statExtraMuted}>{totalUnits === 0 ? 'Empty cart' : `${totalUnits} units`}</Text>
+                <Text style={styles.statExtraMuted}>{totalUnits === 0 ? 'Your cart is empty' : `${totalUnits} units ready`}</Text>
               </View>
             </View>
           </View>

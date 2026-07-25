@@ -1,39 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
   Alert, ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../context/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { DatabaseEngine } from './_DatabaseEngine';
 
 export default function SyncOrdersScreen() {
-  // Offline orders stored locally in phone memory (AsyncStorage)
-  const [offlineOrders, setOfflineOrders] = useState([
-    {
-      id: 'ORD-101',
-      clientName: 'Shoprite Superstore - Ikeja',
-      totalAmount: 120000,
-      description: 'Items: FS Solar Home Inverter Box (1 unit)',
-      timeTaken: 'Logged at 10:45 AM (Offline GPS Geotagged)',
-    },
-    {
-      id: 'ORD-102',
-      clientName: 'Mama Tobi Wholesale Store',
-      totalAmount: 130000,
-      description: 'Items: Smart WiFi Router Pack (2 units)',
-      timeTaken: 'Logged at 01:15 PM (Offline GPS Geotagged)',
-    },
-    {
-      id: 'ORD-103',
-      clientName: 'Alhaja Kudirat Beverages',
-      totalAmount: 40000,
-      description: 'Items: Commercial Display Shelf Unit (1 unit)',
-      timeTaken: 'Logged at 03:20 PM (Offline GPS Geotagged)',
-    },
-  ]);
-
+  const [offlineOrders, setOfflineOrders] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Load real offline orders from DatabaseEngine on mount
+  useEffect(() => {
+    const loadOffline = async () => {
+      try {
+        const orders = await DatabaseEngine.getOfflineOrders();
+        setOfflineOrders(orders || []);
+      } catch (e) {
+        console.log('Sync load error', e.message);
+      }
+    };
+    loadOffline();
+  }, []);
 
   // Calculate total Naira volume of pending orders
   const grandTotal = offlineOrders.reduce((sum, item) => sum + item.totalAmount, 0);
@@ -82,15 +72,17 @@ export default function SyncOrdersScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
+      
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         
         {/* Top Header with Back Button */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
-            <Text style={styles.backText}>⬅️ Back to Home Hub</Text>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
+            <Text style={styles.backText}>⬅️ Back to Home</Text>
           </TouchableOpacity>
-          <Text style={styles.mainTitle}>OFFLINE ORDERS STORAGE 🔄</Text>
-          <Text style={styles.subTitle}>Orders taken locally waiting for network connection</Text>
+          <Text style={styles.mainTitle}>OFFLINE ORDERS SYNC</Text>
+          <Text style={styles.subTitle}>Pending orders waiting to be uploaded</Text>
         </View>
 
         {/* Status Banner */}
@@ -164,7 +156,14 @@ export default function SyncOrdersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 280,
   },
   scrollContainer: {
     padding: 20,
@@ -175,66 +174,72 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#BFDBFE',
     marginBottom: 14,
   },
   backText: {
-    color: '#38BDF8',
-    fontSize: 13,
-    fontWeight: '800',
+    color: '#2563EB',
+    fontSize: 14,
+    fontWeight: '700',
   },
   mainTitle: {
-    color: '#A855F7',
+    color: '#1E3A8A',
     fontSize: 22,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   subTitle: {
-    color: '#94A3B8',
-    fontSize: 13,
+    color: '#64748B',
+    fontSize: 14,
     marginTop: 4,
   },
   statusBanner: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FEF3C7',
     borderLeftWidth: 5,
-    borderLeftColor: '#A855F7',
+    borderLeftColor: '#F59E0B',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   bannerTitle: {
-    color: '#A855F7',
+    color: '#92400E',
     fontSize: 13,
     fontWeight: '800',
     marginBottom: 6,
   },
   bannerText: {
-    color: '#E2E8F0',
+    color: '#78350F',
     fontSize: 13,
     lineHeight: 18,
   },
   boldWhite: {
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#1E3A8A',
   },
   boldCyan: {
     fontWeight: '800',
-    color: '#38BDF8',
+    color: '#2563EB',
   },
   orderCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 18,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
     borderLeftWidth: 5,
-    borderLeftColor: '#38BDF8',
+    borderLeftColor: '#2563EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   orderTopRow: {
     flexDirection: 'row',
@@ -243,18 +248,18 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   clientTitle: {
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontSize: 16,
     fontWeight: '900',
     flex: 1,
   },
   totalAmountText: {
-    color: '#10B981',
+    color: '#059669',
     fontSize: 18,
     fontWeight: '900',
   },
   descriptionText: {
-    color: '#38BDF8',
+    color: '#334155',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 4,
@@ -269,19 +274,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#E2E8F0',
     paddingTop: 14,
   },
   editBtn: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#BFDBFE',
   },
   editBtnText: {
-    color: '#38BDF8',
+    color: '#2563EB',
     fontSize: 13,
     fontWeight: '800',
   },
@@ -295,7 +300,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   syncBtn: {
-    backgroundColor: '#A855F7',
+    backgroundColor: '#2563EB',
     padding: 18,
     borderRadius: 14,
     alignItems: 'center',
@@ -308,22 +313,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   emptyCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 30,
     alignItems: 'center',
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   emptyTitle: {
-    color: '#10B981',
+    color: '#065F46',
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 6,
   },
   emptySub: {
-    color: '#94A3B8',
+    color: '#047857',
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,

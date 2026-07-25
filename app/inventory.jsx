@@ -9,6 +9,7 @@ import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function InventoryScreen() {
   const { colors } = useTheme(); // Global white elegant theme sync
@@ -60,6 +61,19 @@ export default function InventoryScreen() {
         Alert.alert('Cleared ✓', 'Inventory is now 0 - clean production mode.');
       }}
     ]);
+  };
+
+  // NEW: Take photo of stock (for inventory verification)
+  const takeStockPhoto = async (product) => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Camera permission needed', 'Allow camera access to take stock photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+    if (!result.canceled && result.assets?.[0]) {
+      Alert.alert('Stock Photo Captured ✓', `Photo saved for "${product.name}". (In real app this would be uploaded to Supabase storage)`);
+    }
   };
 
   return (

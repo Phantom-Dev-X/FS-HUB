@@ -517,16 +517,24 @@ export default function AdminDashboardScreen() {
                 <Text style={[styles.emptySub, { color: colors.subText }]}>Field officers pop up live right right here the moment they complete registration inside `app/signup.jsx`!</Text>
               </View>
             ) : (
-              activeReps.map((rep) => (
-                <View key={rep.id} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={styles.cardTopRow}>
-                    <Text style={[styles.storeTitle, { color: colors.mainText }]}>{rep.name}</Text>
-                    <Text style={[styles.orderIdText, { color: colors.green }]}>{rep.salesVolume}</Text>
+              activeReps.map((rep) => {
+                // Only show "Online today" if the rep actually logged in today
+                const lastLogin = rep.lastLogin || rep.updated_at || '';
+                const isOnlineToday = lastLogin && new Date(lastLogin).toDateString() === new Date().toDateString();
+                
+                return (
+                  <View key={rep.id} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={styles.cardTopRow}>
+                      <Text style={[styles.storeTitle, { color: colors.mainText }]}>{rep.name}</Text>
+                      <Text style={[styles.orderIdText, { color: colors.green }]}>{rep.salesVolume || '₦0'}</Text>
+                    </View>
+                    <Text style={[styles.repTitle, { color: colors.cyan }]}>Assigned Route: {rep.zone}</Text>
+                    <Text style={[styles.repStatusText, { color: colors.subText, marginTop: 4 }]}>
+                      {isOnlineToday ? '🟢 Online today' : '⚪ Offline'}
+                    </Text>
                   </View>
-                  <Text style={[styles.repTitle, { color: colors.cyan }]}>Assigned Route: {rep.zone}</Text>
-                  <Text style={[styles.repStatusText, { color: colors.subText, marginTop: 4 }]}>{rep.status}</Text>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         )}

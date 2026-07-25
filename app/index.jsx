@@ -1,16 +1,38 @@
 // FS HUB - FINAL ELEGANT WHITE + LINEAR GRADIENT + VALIDATION + DATABASE LINKED
-// - Email regex + strong password checklist
-// - BLOCKS login without account (checks DatabaseEngine reps)
-// - Admin primary peterpatrick@gmail.com / fshubadmin allowed
-// - Saves session and sets OrderStore.currentAgent
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+// - Clean professional login (no rep count leak)
+// - Nice in-page alert cards instead of ugly Alert popups
+// - Inputs disabled while loading
+import React, { useState } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
+
+// Reusable nice Alert Card (replaces ugly Alert.alert)
+const AlertCard = ({ type, title, message, onClose }) => {
+  const bgColor = type === 'error' ? '#FEE2E2' : type === 'success' ? '#D1FAE5' : '#FEF3C7';
+  const borderColor = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#F59E0B';
+  const icon = type === 'error' ? 'alert-circle' : type === 'success' ? 'checkmark-circle' : 'information-circle';
+  const iconColor = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#F59E0B';
+
+  return (
+    <View style={[styles.alertCard, { backgroundColor: bgColor, borderColor }]}>
+      <View style={styles.alertRow}>
+        <Ionicons name={icon} size={20} color={iconColor} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={[styles.alertTitle, { color: iconColor }]}>{title}</Text>
+          <Text style={styles.alertMessage}>{message}</Text>
+        </View>
+        <TouchableOpacity onPress={onClose}>
+          <Ionicons name="close" size={18} color="#64748B" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 export default function LoginScreen() {
   const [userType, setUserType] = useState('agent');
@@ -20,14 +42,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [repCount, setRepCount] = useState(0);
-
-  useEffect(() => {
-    // Init DB and check how many reps exist
-    DatabaseEngine.initDatabase().then(() => {
-      DatabaseEngine.getAllReps().then(reps => setRepCount(reps.length));
-    });
-  }, []);
+  const [alert, setAlert] = useState(null); // {type, title, message}
 
   const validateEmail = (email) => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -90,6 +105,12 @@ export default function LoginScreen() {
     }
   };
 
+  const showAlert = (type, title, message) => {
+    setAlert({ type, title, message });
+  };
+
+  const closeAlert = () => setAlert(null);
+
   const handleLogin = async () => {
     const emailErr = validateEmail(repId);
     const pwdResult = validatePassword(password);
@@ -97,15 +118,15 @@ export default function LoginScreen() {
     if (!pwdResult.valid) setPasswordError(pwdResult.message);
 
     if (emailErr) {
-      Alert.alert('Fix Email ⚠️', emailErr);
+      showAlert('error', 'Fix Email', emailErr);
       return;
     }
     if (!pwdResult.valid) {
-      Alert.alert('Weak Password 🔒', `Password must have:\n• At least 8 chars\n• Uppercase (A-Z)\n• Lowercase (a-z)\n• Number (0-9)\n• Special char (!@#$)\n\nIssues:\n${pwdResult.message}`);
+      showAlert('error', 'Weak Password', `Password must have: At least 8 chars, Uppercase, Lowercase, Number, Special char`);
       return;
     }
     if (!repId || !password) {
-      Alert.alert('Missing Credentials ⚠️', 'Please fill both fields.');
+      showAlert('error', 'Missing Credentials', 'Please fill both fields.');
       return;
     }
 
@@ -117,43 +138,43 @@ export default function LoginScreen() {
         const adminResult = await DatabaseEngine.verifyAdminCredentials(repId, password);
         setIsLoading(false);
         if (!adminResult.success) {
-          Alert.alert('Admin Login Failed', adminResult.message);
+          showAlert('error', 'Admin Login Failed', adminResult.message);
           return;
         }
         await DatabaseEngine.saveSession(adminResult.admin);
-        Alert.alert('Admin Access Granted', `Welcome ${adminResult.admin.name}!`, [{ text: 'Open Admin Suite', onPress: () => router.replace('/admin') }]);
+        showAlert('success', 'Admin Access Granted', `Welcome ${adminResult.admin.name}!`);
+        setTimeout(() => {
+          closeAlert();
+          router.replace('/admin');
+        }, 1200);
         return;
       }
 
-      // AGENT MODE - MUST EXIST IN DATABASE - THIS FIXES "LOGIN WITHOUT ACCOUNT"
+      // AGENT MODE
       const verifyResult = await DatabaseEngine.verifyRepCredentials(repId, password);
       
       if (!verifyResult.success) {
         setIsLoading(false);
-        Alert.alert('Login Failed ❌', verifyResult.message + `\n\nRegistered reps: ${repCount}. If 0, please tap "Register New Account" first to create your officer profile, then it will be saved to Supabase cloud.`, [
-          { text: 'Go to Signup', onPress: () => router.push('/signup') },
-          { text: 'OK' }
-        ]);
+        showAlert('error', 'Login Failed', verifyResult.message + ' — Please register first if you have no account.');
         return;
       }
 
-      // Success - save session and set current agent in OrderStore
+      // Success
       const rep = verifyResult.rep;
       OrderStore.setCurrentAgent({ ...rep, isCurrent: true });
       OrderStore.addNewRep({ ...rep, isCurrent: true });
       await DatabaseEngine.saveSession(rep);
-      
-      // Refresh rep count
-      DatabaseEngine.getAllReps().then(reps => setRepCount(reps.length));
 
       setIsLoading(false);
-      Alert.alert('📱 Field Portal Unlocked!', `Welcome back, Officer ${rep.name || repId}! Territory: ${rep.zone || 'Ikeja'}`, [
-        { text: 'Open Dashboard ➔', onPress: () => router.replace('/home') }
-      ]);
+      showAlert('success', 'Welcome Back!', `Officer ${rep.name || repId} — ${rep.zone || 'Ikeja'}`);
+      setTimeout(() => {
+        closeAlert();
+        router.replace('/home');
+      }, 900);
 
     } catch (e) {
       setIsLoading(false);
-      Alert.alert('Error', e.message);
+      showAlert('error', 'Error', e.message);
     }
   };
 
@@ -173,26 +194,43 @@ export default function LoginScreen() {
               <Text style={styles.title}>FS HUB</Text>
               <Text style={styles.subtitle}>Premium Field Services Platform</Text>
               <Text style={styles.welcome}>Welcome Back!</Text>
-              <Text style={styles.infoPill}>📊 {repCount} reps registered • Must signup first</Text>
               {isAdmin && (
                 <View style={styles.adminBadge}>
                   <Text style={styles.adminBadgeText}>ADMIN MODE • Primary Admin</Text>
                 </View>
               )}
+              <Text style={styles.tagline}>Secure • Fast • Professional</Text>
             </View>
 
             <View style={styles.inputGroup}>
               <View style={[styles.inputWrapper, emailError ? { borderColor: '#EF4444', borderWidth: 2 } : {}]}>
                 <Ionicons name="person-outline" size={20} color="#64748B" style={styles.vectorIcon} />
-                <TextInput style={styles.input} placeholder={isAdmin ? "Admin Email" : "Enter Rep ID / Email"} placeholderTextColor="#94A3B8" value={repId} onChangeText={handleEmailChange} autoCapitalize="none" keyboardType={isAdmin ? "email-address" : "default"} />
+                <TextInput 
+                  style={styles.input} 
+                  placeholder={isAdmin ? "Admin Email" : "Enter Rep ID / Email"} 
+                  placeholderTextColor="#94A3B8" 
+                  value={repId} 
+                  onChangeText={handleEmailChange} 
+                  autoCapitalize="none" 
+                  keyboardType={isAdmin ? "email-address" : "default"} 
+                  editable={!isLoading}
+                />
                 {repId.length > 0 && !emailError && <Ionicons name="checkmark-circle" size={18} color="#10B981" />}
               </View>
               {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
               <View style={[styles.inputWrapper, passwordError ? { borderColor: '#EF4444', borderWidth: 2 } : {}]}>
                 <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.vectorIcon} />
-                <TextInput style={styles.input} placeholder="Password (8+ chars, A-Z, a-z, 0-9, !@#)" placeholderTextColor="#94A3B8" value={password} onChangeText={handlePasswordChange} secureTextEntry={!showPassword} />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Password (8+ chars, A-Z, a-z, 0-9, !@#)" 
+                  placeholderTextColor="#94A3B8" 
+                  value={password} 
+                  onChangeText={handlePasswordChange} 
+                  secureTextEntry={!showPassword} 
+                  editable={!isLoading}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn} disabled={isLoading}>
                   <Ionicons name={showPassword ? "eye-outline" : "eye-off-outline"} size={22} color="#64748B" />
                 </TouchableOpacity>
               </View>
@@ -209,7 +247,13 @@ export default function LoginScreen() {
               )}
               {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-              <TouchableOpacity style={[styles.loginBtn, isAdmin && { backgroundColor: '#F59E0B' }, isLoading && { backgroundColor: '#94A3B8' }]} onPress={handleLogin} disabled={isLoading}>
+              {alert && <AlertCard {...alert} onClose={closeAlert} />}
+
+              <TouchableOpacity 
+                style={[styles.loginBtn, isAdmin && { backgroundColor: '#F59E0B' }, isLoading && { backgroundColor: '#94A3B8' }]} 
+                onPress={handleLogin} 
+                disabled={isLoading}
+              >
                 {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>LOG IN</Text>}
               </TouchableOpacity>
 
@@ -228,7 +272,7 @@ export default function LoginScreen() {
               )}
             </View>
 
-            <Text style={styles.footer}>Secure • Regex Validated • DB Linked • Must signup before login • {repCount} reps stored</Text>
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -250,6 +294,30 @@ const styles = StyleSheet.create({
   infoPill: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 8, color: '#2563EB', fontSize: 11, fontWeight: '700' },
   adminBadge: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
   adminBadgeText: { color: '#D97706', fontSize: 10, fontWeight: '800' },
+  tagline: { color: '#64748B', fontSize: 12, marginTop: 8, fontWeight: '600' },
+
+  // Nice Alert Card styles
+  alertCard: {
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  alertRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  alertTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  alertMessage: {
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 18,
+  },
   inputGroup: { marginTop: 10 },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderWidth: 1.5, borderColor: '#CBD5E1', borderRadius: 12, paddingHorizontal: 14, marginBottom: 6, height: 56 },
   vectorIcon: { marginRight: 10 },
