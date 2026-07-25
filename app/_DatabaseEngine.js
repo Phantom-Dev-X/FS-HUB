@@ -656,32 +656,57 @@ export const DatabaseEngine = {
       const payableTotal = typeof amountRaw === 'number'
         ? amountRaw
         : (Number(String(amountRaw || '0').replace(/[^0-9.-]/g, '')) || 0);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': this.supabaseConfig.anonKey,
-          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-          // Upsert by invoice_number so retrying a synced/partially-synced order never creates a duplicate or blocks cleanup.
-          'Prefer': 'resolution=merge-duplicates,return=minimal'
-        },
-        body: JSON.stringify({
-          invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
-          store_name: orderObj.store || orderObj.clientName || orderObj.store_name || 'Client Store',
-          rep_id: orderObj.repId || orderObj.rep_id || 'UNKNOWN',
-          payable_total: payableTotal,
-          order_items: orderObj.cartItems || orderObj.items || orderObj.order_items || [],
-          geotag_lat_lon: orderObj.gpsVerified || orderObj.geotag_lat_lon || '',
-          created_at: orderObj.created_at || orderObj.localTimestamp || new Date().toISOString()
-        })
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        console.log(`[Order Push] Failed ${response.status}: ${text}`);
-      } else {
-        console.log(`[Order Push] Synced ${orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id} ✅`);
+
+      // Build the richest order payload first. If an older Supabase table is
+      // missing a column, we remove that exact column and retry instead of
+      // blocking the whole order from entering fshub_orders.
+      const payload = {
+        invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
+        store_name: orderObj.store || orderObj.clientName || orderObj.store_name || 'Client Store',
+        rep_id: orderObj.repId || orderObj.rep_id || 'UNKNOWN',
+        payable_total: payableTotal,
+        order_items: orderObj.cartItems || orderObj.items || orderObj.order_items || [],
+        geotag_lat_lon: orderObj.gpsVerified || orderObj.geotag_lat_lon || '',
+        created_at: orderObj.created_at || orderObj.localTimestamp || new Date().toISOString()
+      };
+
+      const pushPayload = async (body) => {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': this.supabaseConfig.anonKey,
+            'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+            // Upsert by invoice_number so retrying a synced/partially-synced order never creates a duplicate or blocks cleanup.
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify(body)
+        });
+        const text = await response.text();
+        return { ok: response.ok, status: response.status, text };
+      };
+
+      let body = { ...payload };
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const result = await pushPayload(body);
+        if (result.ok) {
+          console.log(`[Order Push] Synced ${payload.invoice_number} ✅`);
+          return true;
+        }
+
+        console.log(`[Order Push] Failed ${result.status}: ${result.text}`);
+        const missingColumn = result.text?.match(/Could not find the '([^']+)' column/)?.[1];
+        if (result.status === 400 && missingColumn && Object.prototype.hasOwnProperty.call(body, missingColumn)) {
+          console.log(`[Order Push] Supabase table missing column "${missingColumn}"; retrying without it. Run SUPABASE_DATABASE_REPAIR.sql to fix schema permanently.`);
+          const { [missingColumn]: _removed, ...rest } = body;
+          body = rest;
+          continue;
+        }
+
+        return false;
       }
-      return response.ok;
+
+      return false;
     } catch (e) {
       console.log('[Order Push] Network/error:', e.message);
       return false;

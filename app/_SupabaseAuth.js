@@ -2,6 +2,7 @@
 // Email/password auth for reps. Admin portal remains on the existing admin table for now.
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 export const SUPABASE_URL = 'https://evcbqsgznbrzojjbtnfd.supabase.co';
@@ -22,6 +23,14 @@ const getAuthErrorMessage = (error) => {
   if (/Email not confirmed/i.test(raw)) return 'Please confirm your email before logging in.';
   if (/User already registered/i.test(raw)) return 'This email already has an account. Please log in instead.';
   return raw;
+};
+
+const getPasswordResetRedirectTo = () => {
+  // Web testing needs an http URL; native builds use the fshub:// deep link.
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/reset-password`;
+  }
+  return 'fshub://reset-password';
 };
 
 const parseAuthParamsFromUrl = (url) => {
@@ -88,7 +97,7 @@ export const SupabaseAuth = {
   sendPasswordResetEmail: async function(email) {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: 'fshub://reset-password',
+        redirectTo: getPasswordResetRedirectTo(),
       });
       if (error) return { success: false, message: getAuthErrorMessage(error), error };
       return { success: true };

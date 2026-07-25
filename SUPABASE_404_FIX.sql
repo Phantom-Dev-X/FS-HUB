@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS fshub_orders (
   geotag_lat_lon TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS store_name TEXT;
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS rep_id TEXT;
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS payable_total NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS order_items JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS geotag_lat_lon TEXT;
+ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW());
 
 -- 5. ADMINS TABLE (Optional, for future admin management)
 CREATE TABLE IF NOT EXISTS fshub_admins (
