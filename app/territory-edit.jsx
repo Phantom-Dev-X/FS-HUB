@@ -40,7 +40,11 @@ export default function TerritoryEditScreen() {
           <TextInput style={styles.input} value={address} onChangeText={setAddress} />
         </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={() => router.replace('/territories')}>
+        <TouchableOpacity style={styles.saveBtn} onPress={async () => {
+          if (!client) return;
+          await DatabaseEngine.updateClient(client.id, { name, address });
+          router.replace('/territories');
+        }}>
           <Text style={styles.saveBtnText}>Save Changes ✓</Text>
         </TouchableOpacity>
       </ScrollView>

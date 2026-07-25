@@ -43,7 +43,7 @@ export default function HistoryScreen() {
         type: 'Check-In & Order Logged',
         date: o.created_at ? new Date(o.created_at).toLocaleString() : 'Today',
         filterTag: 'Today',
-        amount: `₦${(o.payable_total || 0).toLocaleString()} (Order)`,
+        amount: `₦${(o.total_amount || o.payable_total || o.amount || 0).toLocaleString()} (Order)`,
         gpsPrecision: o.geotag_lat_lon || 'Lat: 6.6018° N | Lon: 3.3515° E',
         statusColor: '#10B981',
         receiptNo: o.invoice_number || o.id,
