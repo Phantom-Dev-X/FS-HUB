@@ -5,6 +5,7 @@
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS full_name TEXT;
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS auth_user_id UUID;
 
 -- 2. fshub_clients missing rep_id columns for big company filtering (reps see only own)
 ALTER TABLE fshub_clients ADD COLUMN IF NOT EXISTS rep_id TEXT;
@@ -35,7 +36,27 @@ ALTER TABLE fshub_clients DISABLE ROW LEVEL SECURITY;
 ALTER TABLE fshub_orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE fshub_catalog DISABLE ROW LEVEL SECURITY;
 
--- 5. Check data after fix
+-- 5. Admin password bootstrap (fixes Primary Admin seeded without password)
+CREATE TABLE IF NOT EXISTS fshub_admins (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT,
+  is_primary BOOLEAN DEFAULT FALSE,
+  is_super BOOLEAN DEFAULT FALSE,
+  password TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS auth_user_id UUID;
+INSERT INTO fshub_admins (id, name, email, role, is_primary, is_super, password)
+VALUES ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', 'Primary Super Admin', true, true, 'fshubadmin')
+ON CONFLICT (email) DO UPDATE SET
+  is_primary = true,
+  is_super = true,
+  password = COALESCE(fshub_admins.password, EXCLUDED.password);
+
+-- 6. Check data after fix
 SELECT 'fshub_reps' as table_name, COUNT(*) as row_count FROM fshub_reps
 UNION ALL
 SELECT 'fshub_clients', COUNT(*) FROM fshub_clients

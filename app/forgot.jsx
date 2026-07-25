@@ -1,23 +1,24 @@
 import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  TextInput, Alert, ActivityIndicator 
+import {
+  StyleSheet, Text, View, ScrollView, TouchableOpacity,
+  TextInput, Alert, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
-import { EmailService } from './_EmailService';
+import { SupabaseAuth } from './_SupabaseAuth';
 
 export default function ForgotPasswordScreen() {
   const { isDark, toggleTheme } = useTheme();
-  
+
   // Look right right here: 2-Step OTP Reset Wizard state!
   const [step, setStep] = useState(1); // Step 1: Send OTP, Step 2: Verify & Reset
-  
+
   const [repEmail, setRepEmail] = useState('');
-  const [repId, setRepId] = useState('REP-2049');
+  const [repId, setRepId] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
-  
+  const [resetRep, setResetRep] = useState(null);
+
   // Step 2 Form Inputs
   const [inputtedOtp, setInputtedOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -36,74 +37,95 @@ export default function ForgotPasswordScreen() {
     amber:      isDark ? '#F59E0B' : '#D97706',
   };
 
+  const validateEmail = (email) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!email.trim()) return 'Email is required.';
+    if (!emailRegex.test(email.trim())) return 'Enter a valid email address.';
+    return '';
+  };
+
+  const validatePassword = (pwd) => {
+    const checks = {
+      length: pwd.length >= 8,
+      uppercase: /[A-Z]/.test(pwd),
+      lowercase: /[a-z]/.test(pwd),
+      number: /[0-9]/.test(pwd),
+      special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+    };
+    const errors = [];
+    if (!checks.length) errors.push('At least 8 characters');
+    if (!checks.uppercase) errors.push('1 uppercase letter');
+    if (!checks.lowercase) errors.push('1 lowercase letter');
+    if (!checks.number) errors.push('1 number');
+    if (!checks.special) errors.push('1 special character');
+    return { valid: errors.length === 0, errors };
+  };
+
   // =========================================================================
-  // STEP 1: GENERATE & DISPATCH REAL 6-DIGIT OTP VIA EMAILJS (`_EmailService.js`)
+  // STEP 1: VERIFY ACCOUNT, THEN GENERATE & DISPATCH REAL 6-DIGIT OTP VIA EMAILJS
   // =========================================================================
   const handleSendOtp = async () => {
-    if (!repEmail.trim()) {
-      Alert.alert('Missing Email ⚠️', 'Please enter your registered Gmail or Work Email address to receive your 6-digit OTP code.');
+    const emailErr = validateEmail(repEmail);
+    if (emailErr) {
+      Alert.alert('Invalid Email ⚠️', emailErr);
       return;
     }
 
     setIsLoading(true);
-
-    // Generate a random 6-digit OTP (e.g., '849201')
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const formattedCode = `${code.slice(0, 3)}-${code.slice(3)}`;
-    setGeneratedOtp(formattedCode);
-
-    // Call our automated background server email service!
-    const res = await EmailService.sendOtpResetEmail({
-      toEmail: repEmail.trim(),
-      otpCode: formattedCode,
-      repId: repId.trim(),
-    });
-
+    const res = await SupabaseAuth.sendPasswordResetEmail(repEmail.trim());
     setIsLoading(false);
 
     if (res.success) {
-      setStep(2); // Smoothly transitions to Step 2 OTP verification card!
       Alert.alert(
-        '📲 OTP Reset Code Sent!', 
-        `We have automatically dispatched a 6-digit verification code (` +
-        `and security instructions) right to "${repEmail.trim()}" via FS Hub Cloud Server.\n\nCheck your Gmail inbox right now and enter the code below to reset your secret password.`
+        '📧 Password Reset Link Sent!',
+        `Supabase sent a secure password reset link to "${repEmail.trim().toLowerCase()}".\n\nOpen the email on this device and tap the link. It should open FS Hub and show the new password screen.`,
+        [{ text: 'OK' }]
       );
     } else {
-      Alert.alert('Send Error ❌', `Could not dispatch automated OTP email: ${res.message}. Check internet connection.`);
+      Alert.alert('Reset Email Failed ❌', res.message || 'Could not send Supabase password reset email.');
     }
   };
 
   // =========================================================================
   // STEP 2: VERIFY OTP & RESET SECRET PASSWORD
   // =========================================================================
-  const handleVerifyAndReset = () => {
+  const handleVerifyAndReset = async () => {
     if (!inputtedOtp.trim() || !newPassword || !confirmPassword) {
-      Alert.alert('Incomplete Form ⚠️', 'Please enter your 6-digit OTP code and your new secret password twice.');
+      Alert.alert('Incomplete Form ⚠️', 'Please enter your 6-digit OTP code and your new password twice.');
       return;
     }
 
-    // Clean formatting check against our generated OTP
-    const cleanInput = inputtedOtp.trim().replace('-', '');
-    const cleanGenerated = generatedOtp.replace('-', '');
+    const cleanInput = inputtedOtp.trim().replace(/[^0-9]/g, '');
+    const cleanGenerated = generatedOtp.replace(/[^0-9]/g, '');
 
-    if (cleanInput !== cleanGenerated) {
+    if (!generatedOtp || cleanInput !== cleanGenerated) {
       Alert.alert('Invalid OTP ❌', 'The 6-digit code you entered does not match the verification code sent to your email. Please double-check your inbox.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Password Mismatch ⚠️', 'Your new secret password and confirmation password do not match. Please re-type them carefully.');
+      Alert.alert('Password Mismatch ⚠️', 'Your new password and confirmation password do not match. Please re-type them carefully.');
       return;
     }
 
-    if (newPassword.length < 6) {
-      Alert.alert('Weak Password ⚠️', 'Your secret password must be at least 6 characters long for security compliance.');
+    const pwdCheck = validatePassword(newPassword);
+    if (!pwdCheck.valid) {
+      Alert.alert('Weak Password 🔒', `Password must contain:\n• ${pwdCheck.errors.join('\n• ')}`);
+      return;
+    }
+
+    setIsLoading(true);
+    const update = await SupabaseAuth.updatePassword(newPassword);
+    setIsLoading(false);
+
+    if (!update.success) {
+      Alert.alert('Password Update Failed', update.message || 'Could not update password in Supabase. Please open the latest reset email link again.');
       return;
     }
 
     Alert.alert(
-      '🎉 Password Reset Successfully!', 
-      `Officer (${repId}) credentials updated in local secure storage. You can now log into your field portal with your new secret password!`,
+      '🎉 Password Reset Successfully!',
+      `Your Supabase Auth password has been updated. You can now log in with your new password.`,
       [{ text: 'Proceed to Login 🚀', onPress: () => router.replace('/') }]
     );
   };
@@ -111,7 +133,7 @@ export default function ForgotPasswordScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
+
         {/* Top Header Row */}
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => router.push('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
@@ -125,7 +147,7 @@ export default function ForgotPasswordScreen() {
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>
-          Secure OTP verification for FS Hub Field Agents. Our cloud server sends a one-time reset code straight to your inbox.
+          Secure Supabase Auth password reset for FS Hub Field Agents. A reset link will be sent straight to your inbox.
         </Text>
 
         {/* Step Progress Bar */}
@@ -141,22 +163,26 @@ export default function ForgotPasswordScreen() {
           <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.amber }]}>
             <View style={[styles.noteBox, { backgroundColor: colors.background }]}>
               <Text style={styles.noteText}>
-                ℹ️ Enter your registered Rep ID and Gmail address below. We will send a 6-digit OTP code (`e.g. 849-201`) to your inbox in 1 second.
+                ℹ️ Enter your registered email below. Supabase will send a secure reset link to your inbox. Open the link on this phone to create a new password.
               </Text>
             </View>
 
-            <Text style={[styles.label, { color: colors.subText }]}>REP ID / OFFICER CODE</Text>
-            <TextInput 
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
-              placeholder="e.g. REP-2049"
-              placeholderTextColor="#64748B"
-              autoCapitalize="characters"
-              value={repId}
-              onChangeText={setRepId}
-            />
+            {false && (
+              <>
+                <Text style={[styles.label, { color: colors.subText }]}>REP ID / OFFICER CODE</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
+                  placeholder="e.g. REP-2049"
+                  placeholderTextColor="#64748B"
+                  autoCapitalize="characters"
+                  value={repId}
+                  onChangeText={setRepId}
+                />
+              </>
+            )}
 
-            <Text style={[styles.label, { color: colors.amber }]}>REGISTERED GMAIL / WORK EMAIL *</Text>
-            <TextInput 
+            <Text style={[styles.label, { color: colors.amber }]}>REGISTERED EMAIL *</Text>
+            <TextInput
               style={[styles.input, { backgroundColor: colors.background, borderColor: colors.amber, borderWidth: 1.5, color: colors.mainText }]}
               placeholder="e.g. skybrown585@gmail.com"
               placeholderTextColor="#64748B"
@@ -166,7 +192,7 @@ export default function ForgotPasswordScreen() {
               onChangeText={setRepEmail}
             />
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.amber }, isLoading && { backgroundColor: '#475569' }]}
               onPress={handleSendOtp}
               disabled={isLoading}
@@ -174,7 +200,7 @@ export default function ForgotPasswordScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.actionBtnText}>⚡ SEND OTP RESET CODE TO GMAIL ➔</Text>
+                <Text style={styles.actionBtnText}>⚡ SEND SUPABASE RESET LINK ➔</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -190,7 +216,7 @@ export default function ForgotPasswordScreen() {
             </View>
 
             <Text style={[styles.label, { color: colors.green }]}>ENTER 6-DIGIT OTP CODE FROM GMAIL *</Text>
-            <TextInput 
+            <TextInput
               style={[styles.input, { backgroundColor: colors.background, borderColor: colors.green, borderWidth: 1.5, color: colors.mainText, fontSize: 18, fontWeight: '900', letterSpacing: 3, textAlign: 'center' }]}
               placeholder="e.g. 849-201"
               placeholderTextColor="#64748B"
@@ -201,7 +227,7 @@ export default function ForgotPasswordScreen() {
             />
 
             <Text style={[styles.label, { color: colors.subText }]}>CREATE NEW SECRET PASSWORD *</Text>
-            <TextInput 
+            <TextInput
               style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
               placeholder="Minimum 6 characters"
               placeholderTextColor="#64748B"
@@ -211,7 +237,7 @@ export default function ForgotPasswordScreen() {
             />
 
             <Text style={[styles.label, { color: colors.subText }]}>CONFIRM NEW SECRET PASSWORD *</Text>
-            <TextInput 
+            <TextInput
               style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
               placeholder="Re-type new secret password"
               placeholderTextColor="#64748B"
@@ -220,8 +246,8 @@ export default function ForgotPasswordScreen() {
               onChangeText={setConfirmPassword}
             />
 
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.green }]} onPress={handleVerifyAndReset}>
-              <Text style={styles.actionBtnText}>🔒 VERIFY OTP & RESET PASSWORD ✓</Text>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.green }, isLoading && { backgroundColor: '#475569' }]} onPress={handleVerifyAndReset} disabled={isLoading}>
+              {isLoading ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.actionBtnText}>🔒 VERIFY OTP & UPDATE SUPABASE PASSWORD ✓</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setStep(1)} style={styles.resendLinkRow}>

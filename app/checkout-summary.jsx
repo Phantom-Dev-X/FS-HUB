@@ -70,13 +70,19 @@ export default function CheckoutSummaryScreen() {
     discountAmount = Math.round(grandTotal * 0.05);
   }
   const finalPayableTotal = Math.max(0, grandTotal - discountAmount);
-  const invoiceNumber = `INV-884-${Math.floor(100 + Math.random() * 900)}`;
+  // Keep invoice stable for this checkout screen and unique enough for Supabase primary key.
+  const [invoiceNumber] = useState(() => `INV-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`);
 
   // =========================================================================
   // 📧 AUTOMATED BACKGROUND ORDER RECEIPT SENDER
   // Immediately calls background cloud API to email receipt directly to store!
   // =========================================================================
   const handleFinalSubmit = async () => {
+    if (!client) {
+      Alert.alert('No Client Selected', 'Please check in with a client before submitting an order.');
+      router.replace('/checkin');
+      return;
+    }
     if (cartItems.length === 0) {
       Alert.alert('Cart is Empty ⚠️', 'Your cart has no items! Please add items from the catalog first.');
       return;
@@ -107,6 +113,15 @@ export default function CheckoutSummaryScreen() {
       return;
     }
 
+    // Try to push to Supabase immediately after the safe local save.
+    // If network/table fails, the order stays in the offline queue for the Sync screen.
+    let syncResult = null;
+    try {
+      syncResult = await DatabaseEngine.syncToCloudBackend();
+    } catch (e) {
+      syncResult = { success: false, error: e.message };
+    }
+
     const clientEmail = client.email || client.registered_email || '';
 
     // Call our automated background server email service!
@@ -124,14 +139,20 @@ export default function CheckoutSummaryScreen() {
 
     setIsEmailSending(false);
 
+    const cloudSynced = Boolean(syncResult?.success);
     const emailWasSent = Boolean(emailResponse?.success);
+    const cloudMessage = cloudSynced
+      ? `☁️ Supabase sync: ${syncResult.count || 0} order(s) uploaded successfully.`
+      : `📱 Supabase sync pending: order is safe offline and will remain on the Sync page. ${syncResult?.message || syncResult?.error || 'Retry when internet/database is ready.'}`;
+    const emailMessage = emailWasSent
+      ? `📧 Receipt sent to "${clientEmail}".`
+      : `📧 Email not sent${emailResponse?.message ? `: ${emailResponse.message}` : '.'}`;
+
     Alert.alert(
-      emailWasSent
-        ? `🎉 ORDER SAVED & EMAIL SENT (#${invoiceNumber})!`
+      cloudSynced && emailWasSent
+        ? `🎉 ORDER SUBMITTED & EMAIL SENT (#${invoiceNumber})!`
         : `✅ ORDER SAVED (#${invoiceNumber})`,
-      `Store: ${client.name}\nPayable Total: ₦${finalPayableTotal.toLocaleString()} (${totalUnits} Units)\n\n${emailWasSent
-        ? `📧 Receipt sent to "${clientEmail}".`
-        : `The order is safely queued for Supabase sync. Email was not sent${emailResponse?.message ? `: ${emailResponse.message}` : '.'}`}`, 
+      `Store: ${client.name}\nPayable Total: ₦${finalPayableTotal.toLocaleString()} (${totalUnits} Units)\n\n${cloudMessage}\n${emailMessage}`,
       [
         {
           text: 'Return to Hub 🏠',
@@ -144,6 +165,24 @@ export default function CheckoutSummaryScreen() {
       ]
     );
   };
+
+  if (!client) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.guardBox}>
+          <Text style={styles.guardEmoji}>🏬</Text>
+          <Text style={[styles.guardTitle, { color: colors.mainText }]}>No client selected</Text>
+          <Text style={[styles.guardText, { color: colors.subText }]}>Please check in with a client before reviewing or submitting an order.</Text>
+          <TouchableOpacity style={styles.guardBtn} onPress={() => router.replace('/checkin')}>
+            <Text style={styles.guardBtnText}>Go to Check-In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.guardBtn, { backgroundColor: '#64748B', marginTop: 10 }]} onPress={() => router.replace('/home')}>
+            <Text style={styles.guardBtnText}>Back Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -349,6 +388,12 @@ export default function CheckoutSummaryScreen() {
 }
 
 const styles = StyleSheet.create({
+  guardBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  guardEmoji: { fontSize: 48, marginBottom: 12 },
+  guardTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  guardText: { fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 18 },
+  guardBtn: { backgroundColor: '#2563EB', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, minWidth: 180, alignItems: 'center' },
+  guardBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   container: {
     flex: 1,
   },

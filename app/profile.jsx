@@ -22,6 +22,8 @@ export default function ProfileScreen() {
       { text: 'Log Out', style: 'destructive', onPress: async () => {
         // Clear session and current agent
         const { DatabaseEngine } = await import('./_DatabaseEngine');
+        const { SupabaseAuth } = await import('./_SupabaseAuth');
+        await SupabaseAuth.signOut();
         await DatabaseEngine.clearSession();
         router.replace('/');
       }},

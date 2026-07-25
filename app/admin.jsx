@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
+import { SupabaseAuth } from './_SupabaseAuth';
 
 let MapView = null;
 let Marker = null;
@@ -16,6 +17,48 @@ if (Platform.OS !== 'web') {
   MapView = Maps.default;
   Marker = Maps.Marker;
 }
+
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const normalizeOrderItems = (rawItems) => {
+  if (Array.isArray(rawItems)) return rawItems;
+  if (typeof rawItems === 'string') {
+    try {
+      const parsed = JSON.parse(rawItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const mapSupabaseOrderForAdmin = (order) => {
+  const items = normalizeOrderItems(order.order_items || order.cartItems || order.items);
+  const totalUnits = items.reduce((sum, item) => sum + toNumber(item?.qty ?? item?.quantity ?? 0), 0);
+  const payable = toNumber(order.payable_total ?? order.payableTotal ?? order.grandTotal ?? order.totalAmount ?? 0);
+  const createdAt = order.created_at ? new Date(order.created_at) : null;
+
+  return {
+    id: order.invoice_number || order.invoiceNumber || order.id || `INV-${Math.floor(Math.random() * 9000)}`,
+    status: order.status || 'Pending Dispatch ⏳',
+    statusColor: order.statusColor || '#F59E0B',
+    store: order.store_name || order.store || order.clientName || 'Client Store',
+    rep: order.rep_id || order.repId || 'UNKNOWN',
+    amount: `₦${payable.toLocaleString()}`,
+    itemsCount: `${items.length} line${items.length === 1 ? '' : 's'}${totalUnits ? ` • ${totalUnits} units` : ''}`,
+    gpsVerified: order.geotag_lat_lon || order.gpsVerified || 'No GPS recorded',
+    createdAtLabel: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toLocaleString() : 'No timestamp',
+    raw: order,
+  };
+};
 
 export default function AdminDashboardScreen() {
   const { isDark, toggleTheme } = useTheme();
@@ -53,6 +96,32 @@ export default function AdminDashboardScreen() {
   const [newAdminPin, setNewAdminPin] = useState('');
   const [isSuperToggle, setIsSuperToggle] = useState(false);
 
+  const loadIncomingOrders = async () => {
+    const rawOrders = await DatabaseEngine.getAllOrders();
+    const mappedOrders = rawOrders
+      .map(mapSupabaseOrderForAdmin)
+      .sort((a, b) => {
+        const aTime = new Date(a.raw?.created_at || 0).getTime() || 0;
+        const bTime = new Date(b.raw?.created_at || 0).getTime() || 0;
+        return bTime - aTime;
+      });
+    setIncomingOrders(mappedOrders);
+    return mappedOrders;
+  };
+
+  const loadAdminDashboardData = async () => {
+    const [catalogData, repsData] = await Promise.all([
+      DatabaseEngine.getCatalog(),
+      DatabaseEngine.getAllReps(),
+      loadIncomingOrders(),
+    ]);
+
+    setCatalogItems(catalogData);
+    const combined = [...OrderStore.activeReps, ...repsData];
+    const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+    setActiveReps(unique);
+  };
+
   useEffect(() => {
     (async () => {
       const session = await DatabaseEngine.getSession();
@@ -63,13 +132,8 @@ export default function AdminDashboardScreen() {
         return;
       }
       setIsAuthorized(true);
+      await loadAdminDashboardData();
     })();
-    DatabaseEngine.getCatalog().then(data => setCatalogItems(data));
-    DatabaseEngine.getAllReps().then(repsData => {
-      const combined = [...OrderStore.activeReps, ...repsData];
-      const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-      setActiveReps(unique);
-    });
   }, []);
 
   const colors = {
@@ -353,6 +417,7 @@ export default function AdminDashboardScreen() {
       <View style={[styles.headerBox, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={async () => {
+            await SupabaseAuth.signOut();
             await DatabaseEngine.clearSession();
             OrderStore.currentAgent = {
               name: 'Guest Officer', id: 'REP-GUEST', role: 'Field Officer',
@@ -434,6 +499,16 @@ export default function AdminDashboardScreen() {
               🚨 LIVE ORDERS INCOMING FROM FIELD REPS
             </Text>
 
+            <TouchableOpacity
+              style={[styles.testSupabaseBtn, { alignSelf: 'flex-start', marginBottom: 12 }]}
+              onPress={async () => {
+                const refreshed = await loadIncomingOrders();
+                Alert.alert('Orders Refreshed', `Loaded ${refreshed.length} order(s) from Supabase.`);
+              }}
+            >
+              <Text style={styles.testSupabaseText}>🔄 REFRESH SUPABASE ORDERS</Text>
+            </TouchableOpacity>
+
             {incomingOrders.length === 0 ? (
               <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={{ fontSize: 38, marginBottom: 8 }}>📦</Text>
@@ -452,6 +527,7 @@ export default function AdminDashboardScreen() {
 
                   <Text style={[styles.storeTitle, { color: colors.mainText }]} numberOfLines={1}>{order.store}</Text>
                   <Text style={[styles.repTitle, { color: colors.subText }]} numberOfLines={1}>👤 Logged By: {order.rep}</Text>
+                  <Text style={[styles.repTitle, { color: colors.subText, marginTop: -8 }]} numberOfLines={1}>🕒 {order.createdAtLabel}</Text>
 
                   <View style={[styles.amountRow, { borderTopColor: colors.border }]}>
                     <View>

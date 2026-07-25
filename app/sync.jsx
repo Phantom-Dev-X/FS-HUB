@@ -1,139 +1,255 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  Alert, ActivityIndicator 
+import {
+  StyleSheet, Text, View, ScrollView, TouchableOpacity,
+  Alert, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { DatabaseEngine } from './_DatabaseEngine';
 
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const formatNaira = (value) => `₦${toNumber(value).toLocaleString()}`;
+
+const getOrderKey = (order) => String(
+  order?.id ||
+  order?.invoiceNumber ||
+  order?.invoice_number ||
+  order?.localTimestamp ||
+  order?.created_at ||
+  Math.random()
+);
+
+const getOrderTotal = (order) => toNumber(
+  order?.payableTotal ??
+  order?.payable_total ??
+  order?.grandTotal ??
+  order?.totalAmount ??
+  order?.amount ??
+  0
+);
+
+const getClientName = (order) => (
+  order?.clientName ||
+  order?.store ||
+  order?.store_name ||
+  order?.client?.name ||
+  'Unknown Client'
+);
+
+const getInvoiceNumber = (order) => (
+  order?.invoiceNumber ||
+  order?.invoice_number ||
+  order?.id ||
+  'Pending Invoice'
+);
+
+const getOrderItems = (order) => {
+  const items = order?.cartItems || order?.items || order?.order_items || [];
+  return Array.isArray(items) ? items : [];
+};
+
+const getItemSummary = (order) => {
+  const items = getOrderItems(order);
+  const totalUnits = items.reduce((sum, item) => sum + toNumber(item?.qty ?? item?.quantity ?? 0), 0);
+  if (items.length === 0) return 'No item lines saved on this offline record';
+  return `${items.length} product line${items.length === 1 ? '' : 's'} • ${totalUnits} unit${totalUnits === 1 ? '' : 's'}`;
+};
+
+const getOrderTime = (order) => {
+  const raw = order?.localTimestamp || order?.created_at || order?.createdAt;
+  if (!raw) return 'Saved locally';
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? 'Saved locally' : date.toLocaleString();
+};
+
 export default function SyncOrdersScreen() {
   const [offlineOrders, setOfflineOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Load real offline orders from DatabaseEngine on mount
+  const loadOfflineOrders = async () => {
+    try {
+      const orders = await DatabaseEngine.getOfflineOrders();
+      setOfflineOrders(Array.isArray(orders) ? orders : []);
+    } catch (e) {
+      console.log('Sync load error', e.message);
+      Alert.alert('Load Error', `Could not read offline orders: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadOffline = async () => {
-      try {
-        const orders = await DatabaseEngine.getOfflineOrders();
-        setOfflineOrders(orders || []);
-      } catch (e) {
-        console.log('Sync load error', e.message);
-      }
-    };
-    loadOffline();
+    loadOfflineOrders();
   }, []);
 
-  // Calculate total Naira volume of pending orders
-  const grandTotal = offlineOrders.reduce((sum, item) => sum + item.totalAmount, 0);
+  const grandTotal = offlineOrders.reduce((sum, item) => sum + getOrderTotal(item), 0);
 
-  // Function to delete an order before syncing
-  const removeOrder = (id, clientName) => {
+  const removeOrder = (orderKey, clientName) => {
+    const target = offlineOrders.find(o => getOrderKey(o) === orderKey);
+    const targetTotal = getOrderTotal(target);
+
     Alert.alert(
-      'Delete Offline Order', 
-      `Are you sure you want to remove ${clientName}'s order (₦${offlineOrders.find(o => o.id === id)?.totalAmount.toLocaleString()}) from local memory?`, 
+      'Delete Offline Order',
+      `Remove ${clientName}'s offline order (${formatNaira(targetTotal)}) from this phone?\n\nThis cannot be synced after deletion.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive', 
-          onPress: () => setOfflineOrders(prev => prev.filter(order => order.id !== id)) 
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updated = offlineOrders.filter(order => getOrderKey(order) !== orderKey);
+            const saved = await DatabaseEngine.setOfflineOrders(updated);
+            if (!saved.success) {
+              Alert.alert('Delete Failed', saved.error || 'Could not update offline storage.');
+              return;
+            }
+            setOfflineOrders(updated);
+          }
         }
       ]
     );
   };
 
-  // Function when they tap "Edit Order"
-  const handleEditOrder = (clientName) => {
+  const handleViewOrder = (order) => {
+    const items = getOrderItems(order);
+    const itemLines = items.length
+      ? items.map((item, idx) => {
+          const qty = toNumber(item?.qty ?? item?.quantity ?? 0);
+          const price = toNumber(item?.price ?? item?.unit_price ?? 0);
+          return `${idx + 1}. ${item.name || 'Unnamed Product'} — Qty: ${qty} — ₦${(qty * price).toLocaleString()}`;
+        }).join('\n')
+      : 'No item lines saved on this offline record.';
+
     Alert.alert(
-      'Edit Order Details',
-      `Opening offline adjustment window for ${clientName}... Here you can modify items, add special notes, or adjust quantities before server upload.`
+      `Offline Order ${getInvoiceNumber(order)}`,
+      `Client: ${getClientName(order)}\nTotal: ${formatNaira(getOrderTotal(order))}\nSaved: ${getOrderTime(order)}\nStatus: ${order.syncStatus || 'Pending cloud sync'}\n\n${itemLines}`
     );
   };
 
-  // Simulate cloud sync
-  const handleSyncToCloud = () => {
+  const handleSyncToCloud = async () => {
     if (offlineOrders.length === 0) {
       Alert.alert('All Clear ✓', 'No offline orders pending.');
       return;
     }
 
     setIsSyncing(true);
-    setTimeout(() => {
+    try {
+      const result = await DatabaseEngine.syncToCloudBackend();
+      const remainingOrders = await DatabaseEngine.getOfflineOrders();
+      setOfflineOrders(Array.isArray(remainingOrders) ? remainingOrders : []);
+
+      if (result.success) {
+        Alert.alert(
+          'Sync Successful 🎉',
+          result.count === 0
+            ? 'No offline orders were pending.'
+            : `Synced ${result.count} order${result.count === 1 ? '' : 's'} to Supabase. Local pending queue is now clean.`
+        );
+      } else {
+        Alert.alert(
+          result.failedCount ? 'Partial Sync ⚠️' : 'Sync Failed',
+          result.message || result.error || 'Some orders could not be uploaded. They are still safe on this phone. Please retry when network is stable.'
+        );
+      }
+    } catch (e) {
+      Alert.alert('Sync Failed', `${e.message}\n\nYour offline orders are still safe on this phone.`);
+    } finally {
       setIsSyncing(false);
-      Alert.alert(
-        'Sync Successful! 🎉⚡', 
-        `All ${offlineOrders.length} orders totaling ₦${grandTotal.toLocaleString()} have been pushed to FS Hub Cloud Server!`
-      );
-      setOfflineOrders([]); // Clears pending list
-    }, 2000);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
-      
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        
-        {/* Top Header with Back Button */}
+
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
             <Text style={styles.backText}>⬅️ Back to Home</Text>
           </TouchableOpacity>
           <Text style={styles.mainTitle}>OFFLINE ORDERS SYNC</Text>
-          <Text style={styles.subTitle}>Pending orders waiting to be uploaded</Text>
+          <Text style={styles.subTitle}>Real pending orders waiting to upload to Supabase</Text>
         </View>
 
-        {/* Status Banner */}
         <View style={styles.statusBanner}>
-          <Text style={styles.bannerTitle}>⚠️ OFFLINE DATABASE STATUS</Text>
+          <Text style={styles.bannerTitle}>📡 OFFLINE QUEUE STATUS</Text>
           <Text style={styles.bannerText}>
-            Look: No `+ / -` counter here! We display the <Text style={styles.boldWhite}>Total Order Amount</Text> made for each client (`AsyncStorage`). Tap <Text style={styles.boldCyan}>✏️ Edit Order</Text> if you need to adjust items/notes before uploading!
+            Offline orders are saved safely on this phone first. Tap <Text style={styles.boldCyan}>Sync All</Text> when internet is available; successful uploads are removed locally, failed ones stay pending.
           </Text>
         </View>
 
-        {/* List of Pending Orders */}
-        {offlineOrders.length === 0 ? (
+        <View style={styles.summaryCard}>
+          <View>
+            <Text style={styles.summaryLabel}>Pending Orders</Text>
+            <Text style={styles.summaryValue}>{offlineOrders.length}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.summaryLabel}>Pending Value</Text>
+            <Text style={styles.summaryAmount}>{formatNaira(grandTotal)}</Text>
+          </View>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.emptyCard}>
+            <ActivityIndicator color="#2563EB" />
+            <Text style={styles.emptySub}>Reading offline queue...</Text>
+          </View>
+        ) : offlineOrders.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={{fontSize: 48, marginBottom: 12}}>🎉</Text>
-            <Text style={styles.emptyTitle}>All Orders Synced to Cloud!</Text>
-            <Text style={styles.emptySub}>No local offline orders pending. Your field data is 100% up to date with headquarters.</Text>
+            <Text style={styles.emptyTitle}>All Orders Synced!</Text>
+            <Text style={styles.emptySub}>No local offline orders pending. Your field order queue is clean.</Text>
           </View>
         ) : (
-          offlineOrders.map((item) => (
-            <View key={item.id} style={styles.orderCard}>
-              <View style={styles.orderTopRow}>
-                <Text style={styles.clientTitle}>{item.clientName}</Text>
-                <Text style={styles.totalAmountText}>₦{item.totalAmount.toLocaleString()}</Text>
+          offlineOrders.map((item) => {
+            const orderKey = getOrderKey(item);
+            const clientName = getClientName(item);
+            const total = getOrderTotal(item);
+
+            return (
+              <View key={orderKey} style={styles.orderCard}>
+                <View style={styles.orderTopRow}>
+                  <Text style={styles.clientTitle} numberOfLines={1}>{clientName}</Text>
+                  <Text style={styles.totalAmountText}>{formatNaira(total)}</Text>
+                </View>
+
+                <Text style={styles.invoiceText}>#{getInvoiceNumber(item)}</Text>
+                <Text style={styles.descriptionText}>{getItemSummary(item)}</Text>
+                <Text style={styles.timeTag}>🕒 {getOrderTime(item)}</Text>
+                <Text style={styles.statusText}>{item.syncStatus || 'PENDING_CLOUD_SYNC ⏳'}</Text>
+
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={styles.editBtn}
+                    onPress={() => handleViewOrder(item)}
+                  >
+                    <Text style={styles.editBtnText}>👁️ View Details</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => removeOrder(orderKey, clientName)}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️ Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-
-              <Text style={styles.descriptionText}>{item.description}</Text>
-              <Text style={styles.timeTag}>📍 {item.timeTaken}</Text>
-
-              {/* Action Buttons Row: Edit Order & Delete */}
-              <View style={styles.actionsRow}>
-                <TouchableOpacity 
-                  style={styles.editBtn} 
-                  onPress={() => handleEditOrder(item.clientName)}
-                >
-                  <Text style={styles.editBtnText}>✏️ Edit Order Details</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.deleteBtn}
-                  onPress={() => removeOrder(item.id, item.clientName)}
-                >
-                  <Text style={styles.deleteBtnText}>🗑️ Delete</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+            );
+          })
         )}
 
-        {/* Massive Sync Button */}
         {offlineOrders.length > 0 && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.syncBtn, isSyncing && { backgroundColor: '#475569' }]}
             onPress={handleSyncToCloud}
             disabled={isSyncing}
@@ -142,12 +258,11 @@ export default function SyncOrdersScreen() {
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
               <Text style={styles.syncBtnText}>
-                ⚡ SYNC ALL ORDERS TO CLOUD (₦{grandTotal.toLocaleString()}) ➔
+                ⚡ SYNC ALL ORDERS TO SUPABASE ({formatNaira(grandTotal)}) ➔
               </Text>
             )}
           </TouchableOpacity>
         )}
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -204,7 +319,7 @@ const styles = StyleSheet.create({
     borderLeftColor: '#F59E0B',
     padding: 16,
     borderRadius: 14,
-    marginBottom: 20,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#FDE68A',
   },
@@ -219,13 +334,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  boldWhite: {
-    fontWeight: '900',
-    color: '#1E3A8A',
-  },
   boldCyan: {
     fontWeight: '800',
     color: '#2563EB',
+  },
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  summaryLabel: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  summaryValue: {
+    color: '#1E3A8A',
+    fontSize: 26,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  summaryAmount: {
+    color: '#059669',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 2,
   },
   orderCard: {
     backgroundColor: '#FFFFFF',
@@ -245,18 +389,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   clientTitle: {
     color: '#0F172A',
     fontSize: 16,
     fontWeight: '900',
     flex: 1,
+    marginRight: 10,
   },
   totalAmountText: {
     color: '#059669',
     fontSize: 18,
     fontWeight: '900',
+  },
+  invoiceText: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 6,
   },
   descriptionText: {
     color: '#334155',
@@ -267,6 +418,12 @@ const styles = StyleSheet.create({
   timeTag: {
     color: '#64748B',
     fontSize: 12,
+    marginBottom: 6,
+  },
+  statusText: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '800',
     marginBottom: 16,
   },
   actionsRow: {
@@ -311,6 +468,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '900',
+    textAlign: 'center',
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',
@@ -332,5 +490,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
+    marginTop: 6,
   },
 });

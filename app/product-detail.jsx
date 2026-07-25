@@ -18,14 +18,16 @@ export default function ProductDetailScreen() {
   const { isDark, toggleTheme } = useTheme();
   const { id } = useLocalSearchParams(); // Reads ?id=PRD-101 from router!
 
-  // Find the exact product from our warehouse catalog (fallback to PRD-101 if directly testing)
-  const product = OrderStore.catalog.find(p => p.id === id) || OrderStore.catalog[0];
+  // Find the exact product from our warehouse catalog (fallback to first item if directly testing)
+  const product = OrderStore.catalog.find(p => p.id === id) || OrderStore.catalog[0] || null;
   const client = OrderStore.currentClient;
 
   // Check if item is already inside cart to start with its current quantity
-  const existingCartItem = OrderStore.cart.find(c => c.id === product.id);
+  const existingCartItem = product ? OrderStore.cart.find(c => c.id === product.id) : null;
   const [qty, setQty] = useState(existingCartItem ? existingCartItem.qty : 1);
   const [notes, setNotes] = useState('');
+  const productPrice = Number(product?.price ?? product?.unit_price ?? 0);
+  const productStock = Number(product?.stock ?? product?.warehouse_stock ?? 0);
 
   const colors = {
     background: isDark ? '#0F172A' : '#F4F6F9',
@@ -37,11 +39,33 @@ export default function ProductDetailScreen() {
     green:      isDark ? '#10B981' : '#059669',
   };
 
+  if (!client || !product) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.guardBox}>
+          <Text style={styles.guardEmoji}>{!client ? '🏬' : '📦'}</Text>
+          <Text style={[styles.guardTitle, { color: colors.mainText }]}>{!client ? 'No client selected' : 'Product not available'}</Text>
+          <Text style={[styles.guardText, { color: colors.subText }]}>
+            {!client
+              ? 'Please check in with a client before adding products to an order.'
+              : 'The catalog is empty or this product could not be found. Ask admin to add stock products.'}
+          </Text>
+          <TouchableOpacity style={styles.guardBtn} onPress={() => router.replace(!client ? '/checkin' : '/visit')}>
+            <Text style={styles.guardBtnText}>{!client ? 'Go to Check-In' : 'Back to Catalog'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.guardBtn, { backgroundColor: '#64748B', marginTop: 10 }]} onPress={() => router.replace('/home')}>
+            <Text style={styles.guardBtnText}>Back Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const handleAddToCart = () => {
     OrderStore.addToCart(product.id, qty);
     Alert.alert(
       '🛒 Added to Store Cart ✓',
-      `${qty} units of ${product.name} (₦${(qty * product.price).toLocaleString()}) added to ${client.name}'s order!`,
+      `${qty} units of ${product.name} (₦${(qty * productPrice).toLocaleString()}) added to ${client.name}'s order!`,
       [{ text: 'Continue Ordering', onPress: () => router.push('/visit') }]
     );
   };
@@ -64,7 +88,7 @@ export default function ProductDetailScreen() {
         {/* Look right here: HERO PRODUCT PHOTO BOX */}
         <View style={[styles.heroBox, { backgroundColor: colors.card, borderColor: colors.cyan }]}>
           <View style={styles.heroTag}>
-            <Text style={styles.heroTagText}>IN STOCK: {product.stock} UNITS 🟢</Text>
+            <Text style={styles.heroTagText}>IN STOCK: {productStock} UNITS 🟢</Text>
           </View>
           <Text style={{ fontSize: 64, marginVertical: 10 }}>⚡</Text>
           <Text style={[styles.heroProdName, { color: colors.mainText }]} numberOfLines={1}>{product.name}</Text>
@@ -81,12 +105,12 @@ export default function ProductDetailScreen() {
           <View style={[styles.gridRow, { borderTopColor: colors.border }]}>
             <View style={[styles.gridBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <Text style={[styles.gridLabel, { color: colors.subText }]}>UNIT PRICE</Text>
-              <Text style={[styles.gridVal, { color: colors.green }]}>₦{product.price.toLocaleString()}</Text>
+              <Text style={[styles.gridVal, { color: colors.green }]}>₦{productPrice.toLocaleString()}</Text>
             </View>
 
             <View style={[styles.gridBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <Text style={[styles.gridLabel, { color: colors.subText }]}>AVAILABLE STOCK</Text>
-              <Text style={[styles.gridVal, { color: colors.cyan }]}>{product.stock} Units</Text>
+              <Text style={[styles.gridVal, { color: colors.cyan }]}>{productStock} Units</Text>
             </View>
           </View>
         </View>
@@ -113,7 +137,7 @@ export default function ProductDetailScreen() {
             <View style={styles.subtotalBoxRight}>
               <Text style={[styles.subtotalLabel, { color: colors.subText }]}>ITEM SUBTOTAL:</Text>
               <Text style={[styles.subtotalValue, { color: colors.green }]}>
-                ₦{(qty * product.price).toLocaleString()}
+                ₦{(qty * productPrice).toLocaleString()}
               </Text>
             </View>
           </View>
@@ -137,7 +161,7 @@ export default function ProductDetailScreen() {
       <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.cyan }]}>
         <TouchableOpacity style={styles.addBtn} onPress={handleAddToCart}>
           <Text style={styles.addBtnText}>
-            ➕ ADD {qty} {qty === 1 ? 'UNIT' : 'UNITS'} TO CART (₦{(qty * product.price).toLocaleString()}) ✓
+            ➕ ADD {qty} {qty === 1 ? 'UNIT' : 'UNITS'} TO CART (₦{(qty * productPrice).toLocaleString()}) ✓
           </Text>
         </TouchableOpacity>
       </View>
@@ -147,6 +171,12 @@ export default function ProductDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  guardBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  guardEmoji: { fontSize: 48, marginBottom: 12 },
+  guardTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  guardText: { fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 18 },
+  guardBtn: { backgroundColor: '#2563EB', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, minWidth: 180, alignItems: 'center' },
+  guardBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   container: {
     flex: 1,
   },

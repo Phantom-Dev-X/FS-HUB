@@ -59,6 +59,7 @@ export default function RootLayout() {
           <Stack.Screen name="forgot" />
           <Stack.Screen name="signup" />
           <Stack.Screen name="sync" />
+          <Stack.Screen name="reset-password" />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>

@@ -1,13 +1,80 @@
 // HISTORY - ZERO FAKE, WHITE PREMIUM, FIXED TEXT ERROR
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { DatabaseEngine } from './_DatabaseEngine';
+
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const getOrderTotal = (order) => toNumber(
+  order?.payable_total ??
+  order?.payableTotal ??
+  order?.finalPayableTotal ??
+  order?.grandTotal ??
+  order?.total_amount ??
+  order?.totalAmount ??
+  order?.amount ??
+  0
+);
+
+const getOrderItems = (order) => {
+  const rawItems = order?.order_items || order?.cartItems || order?.items || [];
+  if (Array.isArray(rawItems)) return rawItems;
+  if (typeof rawItems === 'string') {
+    try {
+      const parsed = JSON.parse(rawItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const getOrderDate = (order) => {
+  const rawDate = order?.created_at || order?.localTimestamp || order?.createdAt;
+  const date = rawDate ? new Date(rawDate) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+const getFilterTag = (date) => {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfOrderDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((startOfToday - startOfOrderDay) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays >= 0 && diffDays <= 6) return 'This Week';
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) return 'This Month';
+  return 'All Time';
+};
+
+const getOrderClientName = (order) => (
+  order?.store_name ||
+  order?.store ||
+  order?.clientName ||
+  order?.client_name ||
+  'Client Store'
+);
+
+const getReceiptNo = (order) => (
+  order?.invoice_number ||
+  order?.invoiceNumber ||
+  order?.id ||
+  `LOG-${Math.random()}`
+);
 
 export default function HistoryScreen() {
   const { colors } = useTheme();
@@ -18,45 +85,74 @@ export default function HistoryScreen() {
 
   const filters = ['All Time', 'Today', 'This Week', 'This Month'];
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const session = await DatabaseEngine.getSession();
-      const repId = session?.id;
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
 
-      // Fetch only own orders from Supabase (big company - reps see only own)
-      let orders = [];
-      if (repId) {
-        orders = await DatabaseEngine.getOrdersByRep(repId);
-      } else {
-        orders = await DatabaseEngine.getAllOrders();
-      }
+      const loadHistory = async () => {
+        setLoading(true);
+        try {
+          const session = await DatabaseEngine.getSession();
+          const repId = session?.id;
 
-      // Also include offline orders
-      const offline = await DatabaseEngine.getOfflineOrders();
-      const allOrders = [...orders, ...offline];
+          // Fetch only own orders from Supabase (big company - reps see only own)
+          let orders = [];
+          if (repId) {
+            orders = await DatabaseEngine.getOrdersByRep(repId);
+          } else {
+            orders = await DatabaseEngine.getAllOrders();
+          }
 
-      // Convert orders to history logs format
-      const logs = allOrders.map(o => ({
-        id: o.invoice_number || o.id || `LOG-${Math.random()}`,
-        clientName: o.store_name || o.store || 'Client Store',
-        type: 'Check-In & Order Logged',
-        date: o.created_at ? new Date(o.created_at).toLocaleString() : 'Today',
-        filterTag: 'Today',
-        amount: `₦${(o.total_amount || o.payable_total || o.amount || 0).toLocaleString()} (Order)`,
-        gpsPrecision: o.geotag_lat_lon || 'Lat: 6.6018° N | Lon: 3.3515° E',
-        statusColor: '#10B981',
-        receiptNo: o.invoice_number || o.id,
-      }));
+          // Also include offline orders still pending on this phone.
+          const offline = await DatabaseEngine.getOfflineOrders();
+          const allOrders = [...orders, ...offline];
 
-      setHistoryLogs(logs);
-      setLoading(false);
-    })();
-  }, []);
+          // Convert both Supabase rows and local offline records to history logs.
+          const logs = allOrders.map(o => {
+            const orderDate = getOrderDate(o);
+            const items = getOrderItems(o);
+            const totalUnits = items.reduce((sum, item) => sum + toNumber(item?.qty ?? item?.quantity ?? 0), 0);
+            const total = getOrderTotal(o);
+            const receiptNo = getReceiptNo(o);
+            const isOffline = !o.created_at && (o.syncStatus || o.localTimestamp);
+
+            return {
+              id: receiptNo,
+              clientName: getOrderClientName(o),
+              type: isOffline ? 'Offline Order Pending Sync' : 'Check-In & Order Logged',
+              date: orderDate.toLocaleString(),
+              filterTag: getFilterTag(orderDate),
+              amount: `₦${total.toLocaleString()} (${items.length} line${items.length === 1 ? '' : 's'}${totalUnits ? ` • ${totalUnits} units` : ''})`,
+              gpsPrecision: o.geotag_lat_lon || o.gpsVerified || 'No GPS recorded',
+              statusColor: isOffline ? '#F59E0B' : '#10B981',
+              receiptNo,
+            };
+          }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+          if (active) setHistoryLogs(logs);
+        } catch (e) {
+          console.log('History load error', e.message);
+          if (active) Alert.alert('History Error', `Could not load orders: ${e.message}`);
+        } finally {
+          if (active) setLoading(false);
+        }
+      };
+
+      loadHistory();
+
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   const filteredLogs = historyLogs.filter(log => {
     const matchesSearch = log.clientName.toLowerCase().includes(searchQuery.toLowerCase()) || log.receiptNo?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'All Time' || log.filterTag === selectedFilter;
+    const matchesFilter =
+      selectedFilter === 'All Time' ||
+      log.filterTag === selectedFilter ||
+      (selectedFilter === 'This Week' && log.filterTag === 'Today') ||
+      (selectedFilter === 'This Month' && ['Today', 'This Week'].includes(log.filterTag));
     return matchesSearch && matchesFilter;
   });
 

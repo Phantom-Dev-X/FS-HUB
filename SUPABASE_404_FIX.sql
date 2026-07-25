@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS fshub_reps (
   avatar TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
+ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS auth_user_id UUID;
+ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS password TEXT;
 
 -- 2. CLIENTS TABLE
 CREATE TABLE IF NOT EXISTS fshub_clients (
@@ -76,9 +78,17 @@ ALTER TABLE fshub_admins DISABLE ROW LEVEL SECURITY;
 -- etc.
 
 -- Insert primary admin if not exists
-INSERT INTO fshub_admins (id, name, email, role, is_primary, is_super)
-VALUES ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', '👑 PRIMARY SUPER ADMIN', true, true)
-ON CONFLICT (email) DO NOTHING;
+ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS auth_user_id UUID;
+
+INSERT INTO fshub_admins (id, name, email, role, is_primary, is_super, password)
+VALUES ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', '👑 PRIMARY SUPER ADMIN', true, true, 'fshubadmin')
+ON CONFLICT (email) DO UPDATE SET
+  name = EXCLUDED.name,
+  role = EXCLUDED.role,
+  is_primary = true,
+  is_super = true,
+  password = COALESCE(fshub_admins.password, EXCLUDED.password);
 
 -- Success message
 SELECT 'All FS HUB tables created successfully! 404 should be gone.' as status;

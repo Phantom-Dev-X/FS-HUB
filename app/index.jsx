@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
+import { SupabaseAuth } from './_SupabaseAuth';
 
 // Reusable nice Alert Card (replaces ugly Alert.alert)
 const AlertCard = ({ type, title, message, onClose }) => {
@@ -84,12 +85,8 @@ export default function LoginScreen() {
 
   const handlePasswordChange = (text) => {
     setPassword(text);
-    const result = validatePassword(text);
-    if (text && !result.valid) {
-      setPasswordError(result.message);
-    } else {
-      setPasswordError('');
-    }
+    // On login, do not enforce signup strength rules. Supabase/Admin will verify the password.
+    setPasswordError('');
   };
 
   const handleToggleAdminMode = () => {
@@ -115,35 +112,33 @@ export default function LoginScreen() {
   const closeAlert = () => setAlert(null);
 
   const handleLogin = async () => {
-    const emailErr = validateEmail(repId);
-    const pwdResult = validatePassword(password);
+    const normalizedEmail = repId.trim().toLowerCase();
+    const emailErr = validateEmail(normalizedEmail);
     setEmailError(emailErr);
-    if (!pwdResult.valid) setPasswordError(pwdResult.message);
+    setPasswordError('');
 
-    if (emailErr) {
-      showAlert('error', 'Fix Email', emailErr);
+    if (emailErr || !normalizedEmail.includes('@')) {
+      showAlert('error', 'Fix Email', userType === 'agent' ? 'Agent login now uses registered email + password. Rep ID login can be added later.' : (emailErr || 'Enter a valid admin email.'));
       return;
     }
-    if (!pwdResult.valid) {
-      showAlert('error', 'Weak Password', `Password must have: At least 8 chars, Uppercase, Lowercase, Number, Special char`);
-      return;
-    }
-    if (!repId || !password) {
-      showAlert('error', 'Missing Credentials', 'Please fill both fields.');
+    if (!password) {
+      setPasswordError('Password is required');
+      showAlert('error', 'Missing Password', 'Please enter your password.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // ADMIN MODE
+      // ADMIN MODE remains on the protected fshub_admins table for now.
       if (userType === 'admin') {
-        const adminResult = await DatabaseEngine.verifyAdminCredentials(repId, password);
+        const adminResult = await DatabaseEngine.verifyAdminCredentials(normalizedEmail, password);
         setIsLoading(false);
         if (!adminResult.success) {
           showAlert('error', 'Admin Login Failed', adminResult.message);
           return;
         }
+        await SupabaseAuth.signOut();
         await DatabaseEngine.saveSession(adminResult.admin);
         showAlert('success', 'Admin Access Granted', `Welcome ${adminResult.admin.name}!`);
         setTimeout(() => {
@@ -153,23 +148,29 @@ export default function LoginScreen() {
         return;
       }
 
-      // AGENT MODE
-      const verifyResult = await DatabaseEngine.verifyRepCredentials(repId, password);
-      
-      if (!verifyResult.success) {
+      // AGENT MODE: Supabase Auth email/password first, then load FS Hub profile.
+      const authResult = await SupabaseAuth.signInRep({ email: normalizedEmail, password });
+      if (!authResult.success) {
         setIsLoading(false);
-        showAlert('error', 'Login Failed', verifyResult.message + '');
+        showAlert('error', 'Login Failed', authResult.message + '');
         return;
       }
 
-      // Success
-      const rep = verifyResult.rep;
+      const profileResult = await DatabaseEngine.getRepByIdOrEmail(authResult.user.email);
+      if (!profileResult.success) {
+        await SupabaseAuth.signOut();
+        setIsLoading(false);
+        showAlert('error', 'Profile Missing', 'Supabase Auth login worked, but no FS Hub rep profile was found for this email. Please sign up again or contact admin.');
+        return;
+      }
+
+      const rep = { ...profileResult.rep, auth_user_id: authResult.user.id, accountType: 'rep' };
       OrderStore.setCurrentAgent({ ...rep, isCurrent: true });
       OrderStore.addNewRep({ ...rep, isCurrent: true });
       await DatabaseEngine.saveSession(rep);
 
       setIsLoading(false);
-      showAlert('success', 'Welcome Back!', `Officer ${rep.name || repId} — ${rep.zone || 'Ikeja'}`);
+      showAlert('success', 'Welcome Back!', `Officer ${rep.name || normalizedEmail} — ${rep.zone || 'Ikeja'}`);
       setTimeout(() => {
         closeAlert();
         router.replace('/home');
@@ -208,14 +209,14 @@ export default function LoginScreen() {
             <View style={styles.inputGroup}>
               <View style={[styles.inputWrapper, emailError ? { borderColor: '#EF4444', borderWidth: 2 } : {}]}>
                 <Ionicons name="person-outline" size={20} color="#64748B" style={styles.vectorIcon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder={isAdmin ? "Admin Email" : "Enter Rep ID / Email"} 
-                  placeholderTextColor="#94A3B8" 
-                  value={repId} 
-                  onChangeText={handleEmailChange} 
-                  autoCapitalize="none" 
-                  keyboardType={isAdmin ? "email-address" : "default"} 
+                <TextInput
+                  style={styles.input}
+                  placeholder={isAdmin ? "Admin Email" : "Registered Email"}
+                  placeholderTextColor="#94A3B8"
+                  value={repId}
+                  onChangeText={handleEmailChange}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
                   editable={!isLoading}
                 />
                 {repId.length > 0 && !emailError && <Ionicons name="checkmark-circle" size={18} color="#10B981" />}
@@ -224,13 +225,13 @@ export default function LoginScreen() {
 
               <View style={[styles.inputWrapper, passwordError ? { borderColor: '#EF4444', borderWidth: 2 } : {}]}>
                 <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.vectorIcon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Password (8+ chars, A-Z, a-z, 0-9, !@#)" 
-                  placeholderTextColor="#94A3B8" 
-                  value={password} 
-                  onChangeText={handlePasswordChange} 
-                  secureTextEntry={!showPassword} 
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
+                  placeholderTextColor="#94A3B8"
+                  value={password}
+                  onChangeText={handlePasswordChange}
+                  secureTextEntry={!showPassword}
                   editable={!isLoading}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn} disabled={isLoading}>
@@ -238,7 +239,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              {password.length > 0 && (
+              {false && password.length > 0 && (
                 <View style={styles.checklistBox}>
                   <Text style={styles.checklistTitle}>Password must contain:</Text>
                   <View style={styles.checkRow}><Ionicons name={pwdLiveCheck.checks.length ? "checkmark-circle" : "close-circle"} size={16} color={pwdLiveCheck.checks.length ? "#10B981" : "#94A3B8"} /><Text style={[styles.checkText, pwdLiveCheck.checks.length && { color: '#059669' }]}> At least 8 characters</Text></View>
@@ -252,9 +253,9 @@ export default function LoginScreen() {
 
               {alert && <AlertCard {...alert} onClose={closeAlert} />}
 
-              <TouchableOpacity 
-                style={[styles.loginBtn, isAdmin && { backgroundColor: '#F59E0B' }, isLoading && { backgroundColor: '#94A3B8' }]} 
-                onPress={handleLogin} 
+              <TouchableOpacity
+                style={[styles.loginBtn, isAdmin && { backgroundColor: '#F59E0B' }, isLoading && { backgroundColor: '#94A3B8' }]}
+                onPress={handleLogin}
                 disabled={isLoading}
               >
                 {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>LOG IN</Text>}

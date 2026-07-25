@@ -60,6 +60,7 @@ export const DatabaseEngine = {
         territory: repObject.territory || repObject.zone,
         status: repObject.status || 'Active',
         coordinate: repObject.coordinate,
+        auth_user_id: repObject.auth_user_id,
         password: repObject.password,
         initials: repObject.initials,
         avatar: repObject.avatar,
@@ -82,6 +83,7 @@ export const DatabaseEngine = {
           territory: repObject.territory || repObject.zone,
           status: repObject.status || 'Active',
           coordinate: repObject.coordinate,
+          auth_user_id: repObject.auth_user_id,
           initials: repObject.initials,
           avatar: repObject.avatar,
           created_at: new Date().toISOString()
@@ -89,6 +91,27 @@ export const DatabaseEngine = {
         if (result.ok) {
           console.log(`[Supabase] Rep saved without password column (run ADD_MISSING_COLUMNS.sql to add password)`);
           return { success: true, cloud: true, warning: 'Saved without password column - run SQL fix to add password column' };
+        }
+      }
+
+      // If Supabase schema has not been upgraded for auth_user_id yet, keep the
+      // profile usable by matching via email. Run the repair SQL later to add the column.
+      if (result.status === 400 && result.text.includes('auth_user_id')) {
+        console.log(`[Supabase] Missing auth_user_id column, retrying profile save without it...`);
+        result = await tryPush({
+          id: repObject.id,
+          name: repObject.name || repObject.fullName,
+          email: repObject.email?.toLowerCase(),
+          zone: repObject.zone || repObject.territory,
+          territory: repObject.territory || repObject.zone,
+          status: repObject.status || 'Active',
+          coordinate: repObject.coordinate,
+          initials: repObject.initials,
+          avatar: repObject.avatar,
+          created_at: new Date().toISOString()
+        });
+        if (result.ok) {
+          return { success: true, cloud: true, warning: 'Saved without auth_user_id column - run SQL repair to add Auth linkage later' };
         }
       }
 
@@ -176,6 +199,67 @@ export const DatabaseEngine = {
     }
   },
 
+  getRepByIdOrEmail: async function(inputIdOrEmail) {
+    try {
+      const normalizedInput = inputIdOrEmail.trim();
+      const encodedId = encodeURIComponent(normalizedInput);
+      const encodedEmail = encodeURIComponent(normalizedInput.toLowerCase());
+      const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?select=*&or=(id.eq.${encodedId},email.eq.${encodedEmail})`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) return { success: false, message: `Rep lookup failed (${response.status}). Run SQL repair if table/columns are missing.` };
+      const reps = await response.json();
+      let rep = reps?.[0] || null;
+
+      // Fallback for case-sensitive IDs/emails or older rows.
+      if (!rep) {
+        const allReps = await this.getAllReps();
+        rep = allReps.find(r =>
+          r.id?.toLowerCase() === normalizedInput.toLowerCase() ||
+          r.email?.toLowerCase() === normalizedInput.toLowerCase()
+        ) || null;
+      }
+
+      if (!rep) return { success: false, message: 'No representative account was found for those details.' };
+      return { success: true, rep };
+    } catch (e) {
+      return { success: false, message: `Internet required for password reset. Error: ${e.message}` };
+    }
+  },
+
+  updateRepPassword: async function(inputIdOrEmail, newPassword) {
+    try {
+      const lookup = await this.getRepByIdOrEmail(inputIdOrEmail);
+      if (!lookup.success) return lookup;
+      const rep = lookup.rep;
+      const encodedId = encodeURIComponent(rep.id);
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?id=eq.${encodedId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ password: newPassword })
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        return { success: false, message: `Password update failed (${response.status}): ${text || 'Unknown Supabase error'}` };
+      }
+      let updatedRep = rep;
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed[0]) updatedRep = parsed[0];
+      } catch {}
+      return { success: true, rep: updatedRep };
+    } catch (e) {
+      return { success: false, message: `Could not update password: ${e.message}` };
+    }
+  },
+
   uploadImage: async function(uri, storagePath) {
     try {
       const localResponse = await fetch(uri);
@@ -212,14 +296,62 @@ export const DatabaseEngine = {
   verifyAdminCredentials: async function(email, password) {
     try {
       const normalizedEmail = email.trim().toLowerCase();
+      const primaryEmail = 'peterpatrick@gmail.com';
+      const bootstrapPassword = 'fshubadmin';
+
       const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.adminsTable}?select=*&email=eq.${encodeURIComponent(normalizedEmail)}`, {
         headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
       });
-      if (!response.ok) return { success: false, message: `Admin database error ${response.status}.` };
+      if (!response.ok) return { success: false, message: `Admin database error ${response.status}. Run SUPABASE_DATABASE_REPAIR.sql.` };
       const admins = await response.json();
-      const admin = admins[0];
+      let admin = admins[0];
+
+      // Prototype bootstrap: older SQL seeded Peter Patrick without a password.
+      // If the primary admin enters the documented bootstrap password once,
+      // write it into Supabase so future logins work normally.
+      if (!admin && normalizedEmail === primaryEmail && password === bootstrapPassword) {
+        const createRes = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.adminsTable}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': this.supabaseConfig.anonKey,
+            'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            id: 'ADM-001',
+            name: 'Peter Patrick',
+            email: primaryEmail,
+            role: 'Primary Super Admin',
+            is_primary: true,
+            is_super: true,
+            password: bootstrapPassword,
+            created_at: new Date().toISOString()
+          })
+        });
+        const created = createRes.ok ? await createRes.json() : null;
+        admin = Array.isArray(created) ? created[0] : null;
+      }
+
       if (!admin) return { success: false, message: 'Admin account not found.' };
-      if (!admin.password) return { success: false, message: 'This admin has no password configured. Set it securely in Supabase first.' };
+
+      if (!admin.password && normalizedEmail === primaryEmail && password === bootstrapPassword) {
+        const patchRes = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.adminsTable}?email=eq.${encodeURIComponent(primaryEmail)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': this.supabaseConfig.anonKey,
+            'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({ password: bootstrapPassword, is_primary: true, is_super: true, role: 'Primary Super Admin' })
+        });
+        if (!patchRes.ok) return { success: false, message: `Primary admin exists but password could not be seeded. Run SUPABASE_DATABASE_REPAIR.sql. Status ${patchRes.status}` };
+        const patched = await patchRes.json();
+        admin = Array.isArray(patched) ? patched[0] : { ...admin, password: bootstrapPassword };
+      }
+
+      if (!admin.password) return { success: false, message: 'This admin has no password configured. Run SUPABASE_DATABASE_REPAIR.sql or login once with the bootstrap password.' };
       if (admin.password !== password) return { success: false, message: 'Incorrect admin password.' };
       return { success: true, admin: { ...admin, accountType: 'admin' } };
     } catch (e) { return { success: false, message: `Could not verify admin: ${e.message}` }; }
@@ -467,12 +599,28 @@ export const DatabaseEngine = {
   saveOfflineOrder: async function(orderRecord) {
     try {
       const currentOrders = await this.getOfflineOrders();
-      const newRecord = { ...orderRecord, localTimestamp: new Date().toISOString(), syncStatus: 'PENDING_CLOUD_SYNC ⏳' };
+      const generatedId = orderRecord.id || orderRecord.invoiceNumber || orderRecord.invoice_number || `OFF-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const newRecord = {
+        ...orderRecord,
+        id: generatedId,
+        localTimestamp: orderRecord.localTimestamp || new Date().toISOString(),
+        syncStatus: 'PENDING_CLOUD_SYNC ⏳'
+      };
       const updated = [newRecord, ...currentOrders];
       await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify(updated));
       console.log(`[Offline] Saved, total offline: ${updated.length}`);
       return { success: true, orders: updated, offline: true };
     } catch (e) { return { success: false, error: e.message }; }
+  },
+
+  setOfflineOrders: async function(orders) {
+    try {
+      const safeOrders = Array.isArray(orders) ? orders : [];
+      await AsyncStorage.setItem(this.KEYS.OFFLINE_ORDERS, JSON.stringify(safeOrders));
+      return { success: true, orders: safeOrders };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   },
 
   syncToCloudBackend: async function() {
@@ -504,21 +652,40 @@ export const DatabaseEngine = {
   _pushOrderToSupabase: async function(orderObj) {
     try {
       const url = `${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}`;
+      const amountRaw = orderObj.payableTotal ?? orderObj.payable_total ?? orderObj.grandTotal ?? orderObj.totalAmount ?? 0;
+      const payableTotal = typeof amountRaw === 'number'
+        ? amountRaw
+        : (Number(String(amountRaw || '0').replace(/[^0-9.-]/g, '')) || 0);
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}`, 'Prefer': 'return=minimal' },
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          // Upsert by invoice_number so retrying a synced/partially-synced order never creates a duplicate or blocks cleanup.
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
         body: JSON.stringify({
-          invoice_number: orderObj.invoiceNumber || `INV-${Math.floor(Math.random()*9000)}`,
-          store_name: orderObj.store || orderObj.clientName || 'Client Store',
-          rep_id: orderObj.repId || 'UNKNOWN',
-          payable_total: orderObj.payableTotal || orderObj.grandTotal || 0,
-          order_items: orderObj.cartItems || orderObj.items || [],
-          geotag_lat_lon: orderObj.gpsVerified || '',
-          created_at: new Date().toISOString()
+          invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
+          store_name: orderObj.store || orderObj.clientName || orderObj.store_name || 'Client Store',
+          rep_id: orderObj.repId || orderObj.rep_id || 'UNKNOWN',
+          payable_total: payableTotal,
+          order_items: orderObj.cartItems || orderObj.items || orderObj.order_items || [],
+          geotag_lat_lon: orderObj.gpsVerified || orderObj.geotag_lat_lon || '',
+          created_at: orderObj.created_at || orderObj.localTimestamp || new Date().toISOString()
         })
       });
+      const text = await response.text();
+      if (!response.ok) {
+        console.log(`[Order Push] Failed ${response.status}: ${text}`);
+      } else {
+        console.log(`[Order Push] Synced ${orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id} ✅`);
+      }
       return response.ok;
-    } catch { return false; }
+    } catch (e) {
+      console.log('[Order Push] Network/error:', e.message);
+      return false;
+    }
   },
 
   getOrdersByRep: async function(repId) {

@@ -17,12 +17,11 @@ export default function VisitOrdersScreen() {
   const { isDark, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
+  const client = OrderStore.currentClient;
 
   // Look right right here: We store the real captured photo URI inside local state & OrderStore!
-  const [photoUri, setPhotoUri] = useState(OrderStore.currentClient.checkInPhotoUri || null);
+  const [photoUri, setPhotoUri] = useState(client?.checkInPhotoUri || null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-
-  const client = OrderStore.currentClient;
   const { distinctProducts, totalUnits, grandTotal } = OrderStore.getCartSummary();
 
   const [catalogItems, setCatalogItems] = useState(OrderStore.catalog || []);
@@ -128,6 +127,24 @@ export default function VisitOrdersScreen() {
     router.push({ pathname: '/product-detail', params: { id: product.id } });
   };
 
+  if (!client) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.guardBox}>
+          <Text style={styles.guardEmoji}>🏬</Text>
+          <Text style={[styles.guardTitle, { color: colors.mainText }]}>No client check-in selected</Text>
+          <Text style={[styles.guardText, { color: colors.subText }]}>Please choose a client from Check-In before opening the order catalog.</Text>
+          <TouchableOpacity style={styles.guardBtn} onPress={() => router.replace('/checkin')}>
+            <Text style={styles.guardBtnText}>Go to Check-In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.guardBtn, { backgroundColor: '#64748B', marginTop: 10 }]} onPress={() => router.replace('/home')}>
+            <Text style={styles.guardBtnText}>Back Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -224,10 +241,18 @@ export default function VisitOrdersScreen() {
         </Text>
 
         <View style={styles.catalogList}>
-          {filteredCatalog.map((item) => {
+          {filteredCatalog.length === 0 ? (
+            <View style={[styles.emptyCatalogBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>📦</Text>
+              <Text style={[styles.emptyCatalogTitle, { color: colors.mainText }]}>No catalog products available</Text>
+              <Text style={[styles.emptyCatalogText, { color: colors.subText }]}>Ask an admin to add products in Admin → Stock, then reopen this screen.</Text>
+            </View>
+          ) : filteredCatalog.map((item) => {
             const cartItem = OrderStore.cart.find(c => c.id === item.id);
-            const inCartQty = cartItem ? cartItem.qty : 0;
-            const itemSubtotal = cartItem ? (cartItem.qty * cartItem.price) : 0;
+            const inCartQty = cartItem ? Number(cartItem.qty || 0) : 0;
+            const itemPrice = Number(item.price ?? item.unit_price ?? 0);
+            const itemStock = Number(item.stock ?? item.warehouse_stock ?? 0);
+            const itemSubtotal = cartItem ? (inCartQty * Number(cartItem.price ?? itemPrice ?? 0)) : 0;
 
             return (
               <TouchableOpacity
@@ -239,7 +264,7 @@ export default function VisitOrdersScreen() {
                   <View style={styles.prodTextWrapper}>
                     <Text style={[styles.prodName, { color: colors.mainText }]} numberOfLines={1}>{item.name}</Text>
                     <Text style={[styles.prodMeta, { color: colors.subText }]}>
-                      In Stock: {item.stock} units • #{item.barcode}
+                      In Stock: {itemStock} units • #{item.barcode || 'NO-BARCODE'}
                     </Text>
 
                     {inCartQty > 0 && (
@@ -252,7 +277,7 @@ export default function VisitOrdersScreen() {
                   </View>
 
                   <View style={styles.priceRightBox}>
-                    <Text style={[styles.prodPrice, { color: colors.green }]}>₦{item.price.toLocaleString()}</Text>
+                    <Text style={[styles.prodPrice, { color: colors.green }]}>₦{itemPrice.toLocaleString()}</Text>
                     <Text style={[styles.tapActionText, { color: colors.cyan }]}>Tap Detail ➔</Text>
                   </View>
                 </View>
@@ -293,6 +318,12 @@ export default function VisitOrdersScreen() {
 }
 
 const styles = StyleSheet.create({
+  guardBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  guardEmoji: { fontSize: 48, marginBottom: 12 },
+  guardTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 6 },
+  guardText: { fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 18 },
+  guardBtn: { backgroundColor: '#2563EB', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, minWidth: 180, alignItems: 'center' },
+  guardBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   container: {
     flex: 1,
   },
@@ -445,6 +476,23 @@ const styles = StyleSheet.create({
   },
   catalogList: {
     marginBottom: 10,
+  },
+  emptyCatalogBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyCatalogTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  emptyCatalogText: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   productCard: {
     borderRadius: 16,

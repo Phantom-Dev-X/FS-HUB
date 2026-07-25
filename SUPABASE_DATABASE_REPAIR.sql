@@ -29,6 +29,7 @@ alter table public.fshub_reps add column if not exists password text;
 alter table public.fshub_reps add column if not exists full_name text;
 alter table public.fshub_reps add column if not exists email_verified boolean default false;
 alter table public.fshub_reps add column if not exists sales_volume text;
+alter table public.fshub_reps add column if not exists auth_user_id uuid;
 
 -- Clients
 create table if not exists public.fshub_clients (
@@ -111,6 +112,7 @@ create table if not exists public.fshub_admins (
   created_at timestamptz default now()
 );
 alter table public.fshub_admins add column if not exists password text;
+alter table public.fshub_admins add column if not exists auth_user_id uuid;
 
 -- The current app calls PostgREST directly with the anon key. Explicit grants
 -- are required in addition to disabling RLS.
@@ -148,9 +150,14 @@ alter table public.fshub_orders disable row level security;
 alter table public.fshub_admins disable row level security;
 alter table public.fshub_checkins disable row level security;
 
-insert into public.fshub_admins (id, name, email, role, is_primary, is_super)
-values ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', 'Primary Super Admin', true, true)
-on conflict (email) do nothing;
+insert into public.fshub_admins (id, name, email, role, is_primary, is_super, password)
+values ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', 'Primary Super Admin', true, true, 'fshubadmin')
+on conflict (email) do update set
+  name = excluded.name,
+  role = excluded.role,
+  is_primary = true,
+  is_super = true,
+  password = coalesce(public.fshub_admins.password, excluded.password);
 
 commit;
 

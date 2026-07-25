@@ -7,6 +7,7 @@ import { EmailService } from './_EmailService';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { SupabaseAuth } from './_SupabaseAuth';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupScreen() {
@@ -78,14 +79,34 @@ export default function SignupScreen() {
 
     setIsLoading(true);
     const repCoords = OrderStore.repLocation || { latitude: 6.6018, longitude: 3.3515 };
+    const normalizedEmail = gmail.trim().toLowerCase();
+
+    // Create secure Supabase Auth user FIRST. Password is hashed by Supabase Auth,
+    // not stored as plain text in fshub_reps anymore.
+    const authRes = await SupabaseAuth.signUpRep({
+      email: normalizedEmail,
+      password,
+      metadata: {
+        rep_id: normalizedRepId,
+        full_name: fullName.trim(),
+        territory: territory.trim(),
+      }
+    });
+
+    if (!authRes.success) {
+      setIsLoading(false);
+      Alert.alert('❌ Supabase Auth Signup Failed', authRes.message || 'Could not create secure auth account.');
+      return;
+    }
+
     const newOfficerProfile = {
       id: normalizedRepId,
       fullName: fullName.trim(),
       name: `${fullName.trim()} (Field Officer)`,
       zone: `${territory.trim()} • Route #${Math.floor(10 + Math.random()*80)}`,
       territory: territory.trim(),
-      email: gmail.trim().toLowerCase(),
-      password: password, // stored locally for login verification (and pushed to cloud as placeholder)
+      email: normalizedEmail,
+      auth_user_id: authRes.user?.id,
       status: '🟢 Active in Field • Online Today',
       coordinate: { latitude: repCoords.latitude + (Math.random()*0.01 - 0.005), longitude: repCoords.longitude + (Math.random()*0.01 - 0.005) },
       salesVolume: '₦0 Today (Clean Baseline)',
@@ -94,35 +115,42 @@ export default function SignupScreen() {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to Supabase FIRST - must succeed, otherwise show real error
-    console.log('[Signup] Attempting to backup to Supabase...', newOfficerProfile.id);
+    // Save FS Hub profile after secure Auth user is created.
+    console.log('[Signup] Attempting to save FS Hub profile...', newOfficerProfile.id);
     const saveRes = await DatabaseEngine.saveNewRep(newOfficerProfile);
 
     if (!saveRes.success) {
-      console.log('[Signup] Supabase save FAILED:', saveRes.error);
+      console.log('[Signup] Profile save FAILED:', saveRes.error);
+      await SupabaseAuth.signOut();
       setIsLoading(false);
       Alert.alert(
-        '❌ Database Save Failed - Account NOT Backed Up!',
-        `Your account was NOT saved to Supabase cloud. Admin will see 0 reps.\n\nError: ${saveRes.error}\n\nFix:\n1. Go to Supabase SQL Editor\n2. Run SUPABASE_ADD_MISSING_COLUMNS.sql (adds password column)\n3. Then try signup again with NEW Rep ID (old email may be duplicate)\n\nDetails: ${saveRes.error}`,
+        '❌ Profile Save Failed',
+        `Supabase Auth account was created, but the FS Hub rep profile was not saved.\n\nError: ${saveRes.error}\n\nRun SUPABASE_DATABASE_REPAIR.sql and try a new email/Rep ID, or contact admin to clean the duplicate profile.`,
         [{ text: 'OK' }]
       );
       return;
     }
 
-    console.log('[Signup] Supabase save SUCCESS - Rep backed up to cloud ✅');
+    console.log('[Signup] Supabase Auth + FS Hub profile saved ✅');
 
-    // Only if DB save succeeded, save to memory and session
-    OrderStore.addNewRep({ ...newOfficerProfile, isCurrent: true });
-    OrderStore.setCurrentAgent(newOfficerProfile);
-    await DatabaseEngine.saveSession(newOfficerProfile);
+    // If email confirmation is off, Auth gives us a session and we can enter the app immediately.
+    if (authRes.session) {
+      OrderStore.addNewRep({ ...newOfficerProfile, isCurrent: true });
+      OrderStore.setCurrentAgent(newOfficerProfile);
+      await DatabaseEngine.saveSession({ ...newOfficerProfile, accountType: 'rep' });
+    }
 
-    const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: gmail.trim() });
+    const res = await EmailService.sendAgentWelcomeEmail({ agentName: fullName.trim(), repId: repId.trim(), territory: territory.trim(), toEmail: normalizedEmail });
     setIsLoading(false);
 
+    const nextRoute = authRes.session ? '/home' : '/';
+    const nextText = authRes.session ? 'Proceed to Home 🚀' : 'Proceed to Login ➔';
+    const authNote = authRes.session ? 'You are now signed in.' : 'Please check your email if confirmation is enabled, then log in.';
+
     if (res.success) {
-      Alert.alert('🎉 Registration Successful!', `Welcome ${fullName.trim()}!\n\nYour representative account has been successfully created, and a confirmation email has been sent to ${gmail.trim()}.`, [{ text: 'Proceed to Home 🚀', onPress: () => router.replace('/home') }]);
+      Alert.alert('🎉 Registration Successful!', `Welcome ${fullName.trim()}!\n\nYour secure Supabase Auth account and FS Hub profile have been created. Confirmation email sent to ${normalizedEmail}.\n\n${authNote}`, [{ text: nextText, onPress: () => router.replace(nextRoute) }]);
     } else {
-      Alert.alert('Registration Successful', `Your account has been created, but the confirmation email could not be sent: ${res.message}`, [{ text: 'Proceed ➔', onPress: () => router.replace('/home') }]);
+      Alert.alert('Registration Successful', `Your secure account was created, but the welcome email could not be sent: ${res.message}\n\n${authNote}`, [{ text: nextText, onPress: () => router.replace(nextRoute) }]);
     }
   };
 
