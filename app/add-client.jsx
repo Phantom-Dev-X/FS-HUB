@@ -167,7 +167,7 @@ export default function AddClientScreen() {
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
           <Ionicons name="home-outline" size={16} color="#2563EB" />
           <Text style={styles.backText}> Home</Text>
         </TouchableOpacity>
@@ -177,22 +177,22 @@ export default function AddClientScreen() {
 
         <View style={styles.card}>
           <Text style={styles.label}>STORE NAME *</Text>
-          <TextInput style={styles.input} placeholder="e.g. Chinedu Electronics" value={storeName} onChangeText={setStoreName} placeholderTextColor="#94A3B8" />
+          <TextInput style={styles.input} placeholder="e.g. Chinedu Electronics" value={storeName} onChangeText={setStoreName} placeholderTextColor="#94A3B8" editable={!isSending} />
 
           <Text style={styles.label}>OWNER NAME</Text>
-          <TextInput style={styles.input} placeholder="Mr. Chinedu" value={ownerName} onChangeText={setOwnerName} placeholderTextColor="#94A3B8" />
+          <TextInput style={styles.input} placeholder="Mr. Chinedu" value={ownerName} onChangeText={setOwnerName} placeholderTextColor="#94A3B8" editable={!isSending} />
 
           <Text style={styles.label}>PHONE *</Text>
-          <TextInput style={styles.input} placeholder="08012345678" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholderTextColor="#94A3B8" />
+          <TextInput style={styles.input} placeholder="08012345678" keyboardType="phone-pad" value={phone} onChangeText={setPhone} placeholderTextColor="#94A3B8" editable={!isSending} />
 
           <Text style={[styles.label, { color: '#2563EB' }]}>CLIENT EMAIL * (regex validated)</Text>
           <View style={[styles.input, { flexDirection: 'row', alignItems: 'center', paddingVertical: 0 }]}>
             <Ionicons name="mail-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
-            <TextInput style={{ flex: 1, paddingVertical: 12, color: '#0F172A' }} placeholder="client@gmail.com" keyboardType="email-address" autoCapitalize="none" value={storeEmail} onChangeText={setStoreEmail} placeholderTextColor="#94A3B8" />
+            <TextInput style={{ flex: 1, paddingVertical: 12, color: '#0F172A' }} placeholder="client@gmail.com" keyboardType="email-address" autoCapitalize="none" value={storeEmail} onChangeText={setStoreEmail} placeholderTextColor="#94A3B8" editable={!isSending} />
           </View>
 
           <Text style={styles.label}>ADDRESS * (for GPS)</Text>
-          <TextInput style={styles.input} placeholder="14 Allen Avenue, Ikeja" value={address} onChangeText={setAddress} placeholderTextColor="#94A3B8" />
+          <TextInput style={styles.input} placeholder="14 Allen Avenue, Ikeja" value={address} onChangeText={setAddress} placeholderTextColor="#94A3B8" editable={!isSending} />
 
           <Text style={styles.label}>EXACT STORE LOCATION *</Text>
           <TouchableOpacity style={styles.locationPrimary} onPress={captureCurrentLocation} disabled={isLocating}>
@@ -224,7 +224,7 @@ export default function AddClientScreen() {
           </ScrollView>
 
           <Text style={styles.label}>CREDIT LIMIT</Text>
-          <TextInput style={styles.input} value={creditLimit} onChangeText={setCreditLimit} placeholderTextColor="#94A3B8" />
+          <TextInput style={styles.input} value={creditLimit} onChangeText={setCreditLimit} placeholderTextColor="#94A3B8" editable={!isSending} />
 
           <TouchableOpacity style={styles.saveBtn} onPress={handleAddClient} disabled={isSending}>
             {isSending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveBtnText}>Save Client & Send Email 📧 ✓</Text>}

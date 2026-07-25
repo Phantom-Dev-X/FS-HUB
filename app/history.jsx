@@ -69,7 +69,7 @@ export default function HistoryScreen() {
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
             <Ionicons name="home-outline" size={16} color="#2563EB" />
             <Text style={styles.backText}> Home</Text>
           </TouchableOpacity>

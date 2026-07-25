@@ -204,7 +204,7 @@ export default function DashboardScreen() {
             <View style={styles.statTopRow}>
               <View style={styles.statIconBox}><Ionicons name="cart" size={18} color="#10B981" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.statLabel}>Items in Cart</Text>
+                <Text style={styles.statLabel}>Territory Coverage</Text>
                 <Text style={styles.statNumber}>{totalUnits}</Text>
                 <Text style={styles.statExtraMuted}>{totalUnits === 0 ? 'Your cart is empty' : `${totalUnits} units ready`}</Text>
               </View>

@@ -45,7 +45,7 @@ export default function ProfileScreen() {
         
         <View style={styles.headerRow}>
           <Text style={[styles.mainTitle, { color: colors.cyan }]}>👤 REP PROFILE</Text>
-          <TouchableOpacity onPress={() => Alert.alert('Settings', 'FS Hub Preferences')} style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.replace('/settings')} style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="settings-outline" size={18} color={colors.subText} />
           </TouchableOpacity>
         </View>

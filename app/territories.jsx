@@ -26,8 +26,8 @@ export default function TerritoriesScreen() {
     })();
   }, []);
 
-  const handleEditDetails = (clientName) => {
-    Alert.alert('Edit Client Details', `Opening edit form for ${clientName}. Update address, phone, or credit limit.`);
+  const handleEditDetails = (client) => {
+    router.push({ pathname: '/territory-edit', params: { id: client.id } });
   };
 
   return (
@@ -35,7 +35,7 @@ export default function TerritoriesScreen() {
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
             <Ionicons name="home-outline" size={16} color="#2563EB" />
             <Text style={styles.backText}> Home</Text>
           </TouchableOpacity>
@@ -61,7 +61,7 @@ export default function TerritoriesScreen() {
             <View key={client.id} style={styles.clientCard}>
               <View style={styles.cardTopRow}>
                 <Text style={styles.clientName}>{client.name}</Text>
-                <TouchableOpacity style={styles.editPill} onPress={() => handleEditDetails(client.name)}>
+                <TouchableOpacity style={styles.editPill} onPress={() => handleEditDetails(client)}>
                   <Ionicons name="pencil-outline" size={12} color="#2563EB" />
                   <Text style={styles.editPillText}> Edit</Text>
                 </TouchableOpacity>

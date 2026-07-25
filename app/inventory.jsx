@@ -87,7 +87,7 @@ export default function InventoryScreen() {
             <Text style={styles.mainTitle}>📦 Inventory</Text>
             <Text style={styles.sub}>{products.length} products available in the field catalog</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/home')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backBtn}>
             <Ionicons name="home-outline" size={18} color="#2563EB" />
             <Text style={styles.backText}> Home</Text>
           </TouchableOpacity>

@@ -61,7 +61,7 @@ export default function RouteOverviewScreen() {
       {/* FLOATING OVERLAY */}
       <SafeAreaView style={styles.floatingOverlay} pointerEvents="box-none">
         <View style={styles.topRow}>
-          <TouchableOpacity onPress={() => router.push('/home')} style={styles.floatingBackBtn}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.floatingBackBtn}>
             <Ionicons name="home-outline" size={16} color="#2563EB" />
             <Text style={styles.floatingBackText}> Hub</Text>
           </TouchableOpacity>

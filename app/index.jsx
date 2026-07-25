@@ -19,16 +19,19 @@ const AlertCard = ({ type, title, message, onClose }) => {
   const iconColor = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#F59E0B';
 
   return (
-    <View style={[styles.alertCard, { backgroundColor: bgColor, borderColor }]}>
-      <View style={styles.alertRow}>
-        <Ionicons name={icon} size={20} color={iconColor} />
-        <View style={{ flex: 1, marginLeft: 10 }}>
-          <Text style={[styles.alertTitle, { color: iconColor }]}>{title}</Text>
-          <Text style={styles.alertMessage}>{message}</Text>
+    <View style={styles.popupOverlay} pointerEvents="box-none">
+      <View style={[styles.popupCard, { backgroundColor: bgColor, borderColor }]} pointerEvents="auto">
+        <TouchableOpacity style={styles.popupCloseArea} onPress={onClose} activeOpacity={1} />
+        <View style={styles.alertRow}>
+          <Ionicons name={icon} size={24} color={iconColor} />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.alertTitle, { color: iconColor }]}>{title}</Text>
+            <Text style={styles.alertMessage}>{message}</Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.popupCloseBtn}>
+            <Ionicons name="close" size={20} color="#64748B" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={onClose}>
-          <Ionicons name="close" size={18} color="#64748B" />
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -155,7 +158,7 @@ export default function LoginScreen() {
       
       if (!verifyResult.success) {
         setIsLoading(false);
-        showAlert('error', 'Login Failed', verifyResult.message + ' — Please register first if you have no account.');
+        showAlert('error', 'Login Failed', verifyResult.message + '');
         return;
       }
 
@@ -334,5 +337,37 @@ const styles = StyleSheet.create({
   linkText: { color: '#1E3A8A', fontSize: 15, fontWeight: '700' },
   linkBtnSecondary: { alignItems: 'center', marginTop: 16 },
   linkTextSecondary: { color: '#1E3A8A', fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  // Popup overlay for centered alert card
+  popupOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+    paddingHorizontal: 24,
+  },
+  popupCard: {
+    borderWidth: 2,
+    borderRadius: 18,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  popupCloseArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  popupCloseBtn: {
+    padding: 4,
+  },
   footer: { textAlign: 'center', color: '#94A3B8', fontSize: 10, marginTop: 24 },
 });

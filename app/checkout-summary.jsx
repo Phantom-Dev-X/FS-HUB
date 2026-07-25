@@ -138,7 +138,7 @@ export default function CheckoutSummaryScreen() {
           style: 'default',
           onPress: () => {
             OrderStore.cart = [];
-            router.push('/home');
+            router.replace('/home');
           }
         }
       ]
