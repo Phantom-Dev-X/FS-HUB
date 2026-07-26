@@ -1,22 +1,31 @@
 {
   "expo": {
+    "owner": "phantomdevs",
     "scheme": "fshub",
-    "name": "sfa-app-v2",
+    "name": "FS Hub",
     "slug": "sfa-app-v2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/39e25075-c0cd-4d89-a057-e6bb29136937"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.phantomdevx.fshub"
     },
     "android": {
+      "package": "com.phantomdevx.fshub",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -26,10 +35,15 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-   "plugins": [
-  "expo-router",
-  "expo-sqlite",
-  "expo-secure-store"
-]
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "39e25075-c0cd-4d89-a057-e6bb29136937"
+      }
+    }
   }
 }
