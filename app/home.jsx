@@ -14,9 +14,13 @@ import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
 
+// Standalone APK stability mode: keep Home dashboard off native maps.
+// Native MapView/GPS startup can hard-crash some Android builds. GPS still works
+// in Add Client / Visit flows where it is required for verification.
 let MapView = null;
 let Marker = null;
-if (Platform.OS !== 'web') {
+const ENABLE_HOME_NATIVE_MAP = false;
+if (ENABLE_HOME_NATIVE_MAP && Platform.OS !== 'web') {
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
@@ -44,29 +48,10 @@ export default function DashboardScreen() {
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
 
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          const { latitude, longitude } = location.coords;
-          OrderStore.repLocation = { latitude, longitude };
-          RouteStore.repLocation = { latitude, longitude };
-          if (active) {
-            setRepCoordinates({ latitude, longitude });
-            setLocationStatus('GPS Active 🟢');
-          }
-        } else {
-          if (active) setLocationStatus('Permission Denied');
-        }
-      } catch {
-        if (active) setLocationStatus('Ready');
-      }
-    })();
-    return () => {
-      active = false;
-    };
+    // Do not auto-request GPS from Home. Some standalone Android builds can
+    // close around the first permission/location/map cycle. Field verification
+    // screens request GPS when the user actually needs it.
+    setLocationStatus('Ready — GPS verifies during check-in');
   }, []);
 
   useFocusEffect(
