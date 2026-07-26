@@ -10,9 +10,13 @@ import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { SupabaseAuth } from './_SupabaseAuth';
 
+// Keep admin radar stable in standalone APKs. The native MapView can hard-crash
+// Android if Supabase contains malformed coordinates or Google Maps config is not ready.
+// We still list all reps below; full native map can be re-enabled after coordinate cleanup.
 let MapView = null;
 let Marker = null;
-if (Platform.OS !== 'web') {
+const ENABLE_ADMIN_NATIVE_MAP = false;
+if (ENABLE_ADMIN_NATIVE_MAP && Platform.OS !== 'web') {
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
@@ -565,8 +569,9 @@ export default function AdminDashboardScreen() {
               {Platform.OS === 'web' || !MapView ? (
                 <View style={[styles.webFallbackBox, { backgroundColor: colors.card }]}>
                   <Text style={{ fontSize: 40, marginBottom: 6 }}>🗺️</Text>
-                  <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 16 }}>Headquarters Master Radar</Text>
-                  <Text style={{ color: colors.green, fontSize: 13, marginTop: 4 }}>Tracking {activeReps.length} registered officers across territory</Text>
+                  <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 16 }}>Headquarters Rep Radar</Text>
+                  <Text style={{ color: colors.green, fontSize: 13, marginTop: 4 }}>Tracking {activeReps.length} registered officers</Text>
+                  <Text style={{ color: colors.subText, fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 16 }}>Native admin map is temporarily disabled in APK stability mode. Rep list below stays live from Supabase.</Text>
                 </View>
               ) : (
                 <MapView
@@ -599,12 +604,12 @@ export default function AdminDashboardScreen() {
                 const isOnlineToday = lastLogin && new Date(lastLogin).toDateString() === new Date().toDateString();
                 
                 return (
-                  <View key={rep.id} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View key={String(rep.id || rep.email || Math.random())} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardTopRow}>
-                      <Text style={[styles.storeTitle, { color: colors.mainText }]}>{rep.name}</Text>
-                      <Text style={[styles.orderIdText, { color: colors.green }]}>{rep.salesVolume || '₦0'}</Text>
+                      <Text style={[styles.storeTitle, { color: colors.mainText }]}>{String(rep.name || rep.full_name || rep.email || 'Unnamed Rep')}</Text>
+                      <Text style={[styles.orderIdText, { color: colors.green }]}>{String(rep.salesVolume || rep.sales_volume || '₦0')}</Text>
                     </View>
-                    <Text style={[styles.repTitle, { color: colors.cyan }]}>Assigned Route: {rep.zone}</Text>
+                    <Text style={[styles.repTitle, { color: colors.cyan }]}>Assigned Route: {String(rep.zone || rep.territory || 'Unassigned')}</Text>
                     <Text style={[styles.repStatusText, { color: colors.subText, marginTop: 4 }]}>
                       {isOnlineToday ? '🟢 Online today' : '⚪ Offline'}
                     </Text>
