@@ -4,9 +4,10 @@ import {
   TextInput, Alert, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { useTheme } from '../context/ThemeContext';
 import { router } from 'expo-router';
-import { SupabaseAuth } from './_SupabaseAuth';
+import { SupabaseAuth, getPasswordResetRedirectTo } from './_SupabaseAuth';
 
 export default function ForgotPasswordScreen() {
   const { isDark, toggleTheme } = useTheme();
@@ -25,6 +26,7 @@ export default function ForgotPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
+  const isExpoGo = Constants.appOwnership === 'expo';
 
   const colors = {
     background: isDark ? '#0F172A' : '#F4F6F9',
@@ -62,7 +64,8 @@ export default function ForgotPasswordScreen() {
   };
 
   // =========================================================================
-  // STEP 1: SEND SUPABASE EMAIL OTP — works inside Expo Go, no deep link needed.
+  // STEP 1: Expo Go uses OTP because custom app schemes do not belong to Expo Go.
+  // Packaged/dev builds use Supabase recovery deep links (fshub://reset-password).
   // =========================================================================
   const handleSendOtp = async () => {
     const emailErr = validateEmail(repEmail);
@@ -72,6 +75,21 @@ export default function ForgotPasswordScreen() {
     }
 
     setIsLoading(true);
+
+    if (!isExpoGo) {
+      const res = await SupabaseAuth.sendPasswordResetEmail(repEmail.trim());
+      setIsLoading(false);
+      if (res.success) {
+        Alert.alert(
+          '📧 Reset Link Sent!',
+          `Supabase sent a secure reset link to "${repEmail.trim().toLowerCase()}".\n\nOpen the email on this phone. Because this is a packaged/dev build, the link should open FS Hub directly.\n\nRedirect used:\n${getPasswordResetRedirectTo()}`
+        );
+      } else {
+        Alert.alert('Reset Link Failed ❌', res.message || 'Could not send Supabase password reset email.');
+      }
+      return;
+    }
+
     const res = await SupabaseAuth.sendEmailOtp(repEmail.trim());
     setIsLoading(false);
 
@@ -80,7 +98,7 @@ export default function ForgotPasswordScreen() {
       setInputtedOtp('');
       Alert.alert(
         '📧 OTP Code Sent!',
-        `Supabase sent a sign-in OTP code to "${repEmail.trim().toLowerCase()}".\n\nDo NOT tap the link/button. Copy the numeric OTP code from the email and enter it in the app, then choose a new password.`
+        `Supabase sent a sign-in OTP code to "${repEmail.trim().toLowerCase()}".\n\nYou are using Expo Go, so do NOT tap the link/button. Copy the numeric OTP code from the email and enter it in the app, then choose a new password.`
       );
     } else {
       Alert.alert('OTP Send Failed ❌', res.message || 'Could not send Supabase OTP email.');
@@ -153,7 +171,9 @@ export default function ForgotPasswordScreen() {
         </View>
 
         <Text style={[styles.subText, { color: colors.subText }]}>
-          Secure Supabase Auth password reset for FS Hub Field Agents. We send an email OTP code, then you type it here to set a new password.
+          {isExpoGo
+            ? 'Expo Go mode: we send an email OTP code, then you type it here to set a new password.'
+            : 'Installed app mode: Supabase sends a deep-link reset email that opens FS Hub directly.'}
         </Text>
 
         {/* Step Progress Bar */}
@@ -169,7 +189,9 @@ export default function ForgotPasswordScreen() {
           <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.amber }]}>
             <View style={[styles.noteBox, { backgroundColor: colors.background }]}>
               <Text style={styles.noteText}>
-                ℹ️ Enter your registered email below. Supabase will send a numeric OTP code to your inbox. Copy the code into this app — no link tapping needed in Expo Go.
+                {isExpoGo
+                  ? 'ℹ️ Enter your registered email below. Supabase will send a numeric OTP code. Copy the code into this app — no link tapping needed in Expo Go.'
+                  : 'ℹ️ Enter your registered email below. Supabase will send a secure deep-link reset email that opens FS Hub directly.'}
               </Text>
             </View>
 
@@ -206,7 +228,7 @@ export default function ForgotPasswordScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.actionBtnText}>⚡ SEND SUPABASE OTP CODE ➔</Text>
+                <Text style={styles.actionBtnText}>{isExpoGo ? '⚡ SEND SUPABASE OTP CODE ➔' : '⚡ SEND DEEP-LINK RESET EMAIL ➔'}</Text>
               )}
             </TouchableOpacity>
           </View>
