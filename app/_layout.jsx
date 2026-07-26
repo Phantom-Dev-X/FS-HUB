@@ -6,7 +6,15 @@ import { useEffect } from 'react';
 import * as Linking from 'expo-linking';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
-import { isPasswordRecoveryUrl } from './_SupabaseAuth';
+
+const isPasswordRecoveryUrl = (url) => {
+  if (!url) return false;
+  return (
+    url.includes('type=recovery') ||
+    url.includes('reset-password') ||
+    (url.includes('access_token=') && url.includes('refresh_token='))
+  );
+};
 
 export default function RootLayout() {
   useEffect(() => {

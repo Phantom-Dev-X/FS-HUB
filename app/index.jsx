@@ -10,7 +10,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
-import { SupabaseAuth } from './_SupabaseAuth';
 
 // Reusable nice Alert Card (replaces ugly Alert.alert)
 const AlertCard = ({ type, title, message, onClose }) => {
@@ -138,6 +137,7 @@ export default function LoginScreen() {
           showAlert('error', 'Admin Login Failed', adminResult.message);
           return;
         }
+        const { SupabaseAuth } = await import('./_SupabaseAuth');
         await SupabaseAuth.signOut();
         await DatabaseEngine.saveSession(adminResult.admin);
         showAlert('success', 'Admin Access Granted', `Welcome ${adminResult.admin.name}!`);
@@ -149,6 +149,7 @@ export default function LoginScreen() {
       }
 
       // AGENT MODE: Supabase Auth email/password first, then load FS Hub profile.
+      const { SupabaseAuth } = await import('./_SupabaseAuth');
       const authResult = await SupabaseAuth.signInRep({ email: normalizedEmail, password });
       if (!authResult.success) {
         setIsLoading(false);
