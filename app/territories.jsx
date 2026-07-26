@@ -9,6 +9,7 @@ import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import SmartFooter from './SmartFooter';
+import OSMMap from '../components/OSMMap';
 
 export default function TerritoriesScreen() {
   const [clients, setClients] = useState([]);
@@ -46,6 +47,24 @@ export default function TerritoriesScreen() {
 
         <Text style={styles.mainTitle}>👥 My Territories</Text>
         <Text style={styles.subText}>Big company: You see ONLY your own {clients.length} clients (filtered by rep_id). Admin sees all via Admin portal. Tap Edit to modify.</Text>
+
+        {clients.length > 0 && (
+          <View style={styles.mapCard}>
+            <OSMMap
+              center={clients.find(c => c.coordinate)?.coordinate || OrderStore.repLocation}
+              markers={clients.map(client => ({
+                id: client.id,
+                coordinate: client.coordinate,
+                title: client.name,
+                description: client.address,
+                color: '#EF4444'
+              }))}
+              height={220}
+              zoom={13}
+            />
+            <Text style={styles.mapHint}>Embedded map powered by OpenStreetMap • Red pins = your clients</Text>
+          </View>
+        )}
 
         {clients.length === 0 ? (
           <View style={styles.emptyBox}>
@@ -90,6 +109,8 @@ const styles = StyleSheet.create({
   badgeText: { color: '#2563EB', fontSize: 10, fontWeight: '800' },
   mainTitle: { fontSize: 22, fontWeight: '900', color: '#1E3A8A', marginBottom: 4 },
   subText: { fontSize: 12, color: '#64748B', lineHeight: 17, marginBottom: 16 },
+  mapCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#DBEAFE', marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
+  mapHint: { color: '#64748B', fontSize: 10, marginTop: 8, textAlign: 'center', fontWeight: '700' },
   emptyBox: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#DBEAFE', alignItems: 'center', marginTop: 10 },
   emptyTitle: { color: '#1E3A8A', fontSize: 16, fontWeight: '900', marginTop: 8 },
   emptySub: { color: '#64748B', fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 6, marginBottom: 16 },

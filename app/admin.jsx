@@ -9,6 +9,7 @@ import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { SupabaseAuth } from './_SupabaseAuth';
+import OSMMap from '../components/OSMMap';
 
 // Keep admin radar stable in standalone APKs. The native MapView can hard-crash
 // Android if Supabase contains malformed coordinates or Google Maps config is not ready.
@@ -568,10 +569,20 @@ export default function AdminDashboardScreen() {
             <View style={[styles.mapCardContainer, { borderColor: colors.cyan }]}>
               {Platform.OS === 'web' || !MapView ? (
                 <View style={[styles.webFallbackBox, { backgroundColor: colors.card }]}>
-                  <Text style={{ fontSize: 40, marginBottom: 6 }}>🗺️</Text>
-                  <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 16 }}>Headquarters Rep Radar</Text>
+                  <OSMMap
+                    center={OrderStore.repLocation}
+                    markers={activeReps.map(rep => ({
+                      id: rep.id || rep.email,
+                      coordinate: rep.coordinate || OrderStore.repLocation,
+                      title: rep.name || rep.full_name || rep.email || 'Rep',
+                      description: rep.zone || rep.territory || rep.status || 'Registered officer',
+                      color: '#2563EB'
+                    }))}
+                    height={170}
+                    zoom={12}
+                  />
+                  <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 16, marginTop: 8 }}>Headquarters OSM Rep Radar</Text>
                   <Text style={{ color: colors.green, fontSize: 13, marginTop: 4 }}>Tracking {activeReps.length} registered officers</Text>
-                  <Text style={{ color: colors.subText, fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 16 }}>Native admin map is temporarily disabled in APK stability mode. Rep list below stays live from Supabase.</Text>
                 </View>
               ) : (
                 <MapView
@@ -1018,7 +1029,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   mapCardContainer: {
-    height: 240,
+    height: 300,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1.5,

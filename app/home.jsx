@@ -13,8 +13,9 @@ import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
+import OSMMap from '../components/OSMMap';
 
-// Standalone APK stability mode: keep Home dashboard off native maps.
+// Standalone APK stability mode: keep Home off native Google MapView.
 // Native MapView/GPS startup can hard-crash some Android builds. GPS still works
 // in Add Client / Visit flows where it is required for verification.
 let MapView = null;
@@ -271,10 +272,21 @@ export default function DashboardScreen() {
           <View style={styles.mapWrapper}>
             {Platform.OS === 'web' || !MapView ? (
               <View style={styles.webMapFallback}>
-                <Ionicons name="map-outline" size={32} color="#2563EB" />
-                <Text style={styles.webMapTitle}>Safe GPS Radar</Text>
+                <OSMMap
+                  center={repCoords}
+                  markers={OrderStore.clients.slice(0, 50).map(store => ({
+                    id: store.id,
+                    coordinate: store.coordinate,
+                    title: store.name,
+                    description: store.address,
+                    color: '#EF4444'
+                  }))}
+                  height={155}
+                  zoom={13}
+                />
+                <Text style={styles.webMapTitle}>OpenStreetMap Territory Radar</Text>
                 <Text style={styles.webMapSub}>Lat {Number(repCoords.latitude).toFixed(4)} | Lon {Number(repCoords.longitude).toFixed(4)}</Text>
-                <Text style={styles.webMapSmall}>Embedded Google Map is disabled until an Android Maps API key is added. GPS can still verify your field position safely.</Text>
+                <Text style={styles.webMapSmall}>Free embedded map powered by OpenStreetMap. Tap Enable GPS to update your field position.</Text>
                 <View style={styles.mapButtonRow}>
                   <TouchableOpacity style={styles.viewMapBtn} onPress={handleEnableGps} disabled={isLocating}>
                     <Text style={styles.viewMapText}>{isLocating ? 'Locating...' : 'Enable GPS'}</Text>
@@ -381,7 +393,7 @@ const styles = StyleSheet.create({
   radarCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 14, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
   radarTitle: { fontSize: 13, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
   radarSub: { fontSize: 10, color: '#64748B', marginBottom: 8 },
-  mapWrapper: { height: 180, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  mapWrapper: { height: 300, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
   webMapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
   webMapTitle: { fontSize: 14, fontWeight: '800', color: '#1E3A8A', marginTop: 8 },
   webMapSub: { fontSize: 12, color: '#059669', marginTop: 4 },
