@@ -9,7 +9,7 @@ import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import SmartFooter from './SmartFooter';
-import OSMMap from '../components/OSMMap';
+import GoogleWebMap from '../components/GoogleWebMap';
 
 export default function TerritoriesScreen() {
   const [clients, setClients] = useState([]);
@@ -50,19 +50,13 @@ export default function TerritoriesScreen() {
 
         {clients.length > 0 && (
           <View style={styles.mapCard}>
-            <OSMMap
+            <GoogleWebMap
               center={clients.find(c => c.coordinate)?.coordinate || OrderStore.repLocation}
-              markers={clients.map(client => ({
-                id: client.id,
-                coordinate: client.coordinate,
-                title: client.name,
-                description: client.address,
-                color: '#EF4444'
-              }))}
               height={220}
               zoom={13}
+              label="FS Hub Territory"
             />
-            <Text style={styles.mapHint}>Embedded map powered by OpenStreetMap • Red pins = your clients</Text>
+            <Text style={styles.mapHint}>Embedded Google map preview • Client list below remains source of truth</Text>
           </View>
         )}
 

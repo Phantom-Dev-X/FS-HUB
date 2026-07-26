@@ -9,7 +9,7 @@ import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore';
 import { SupabaseAuth } from './_SupabaseAuth';
-import OSMMap from '../components/OSMMap';
+import GoogleWebMap from '../components/GoogleWebMap';
 
 // Keep admin radar stable in standalone APKs. The native MapView can hard-crash
 // Android if Supabase contains malformed coordinates or Google Maps config is not ready.
@@ -569,20 +569,12 @@ export default function AdminDashboardScreen() {
             <View style={[styles.mapCardContainer, { borderColor: colors.cyan }]}>
               {Platform.OS === 'web' || !MapView ? (
                 <View style={[styles.webFallbackBox, { backgroundColor: colors.card }]}>
-                  <OSMMap
+                  <GoogleWebMap
                     center={OrderStore.repLocation}
-                    markers={activeReps.map(rep => ({
-                      id: rep.id || rep.email,
-                      coordinate: rep.coordinate || OrderStore.repLocation,
-                      title: rep.name || rep.full_name || rep.email || 'Rep',
-                      description: rep.zone || rep.territory || rep.status || 'Registered officer',
-                      color: '#2563EB'
-                    }))}
-                    height={170}
+                    height={260}
                     zoom={12}
+                    label="FS Hub Reps Radar"
                   />
-                  <Text style={{ color: colors.mainText, fontWeight: 'bold', fontSize: 16, marginTop: 8 }}>Headquarters OSM Rep Radar</Text>
-                  <Text style={{ color: colors.green, fontSize: 13, marginTop: 4 }}>Tracking {activeReps.length} registered officers</Text>
                 </View>
               ) : (
                 <MapView

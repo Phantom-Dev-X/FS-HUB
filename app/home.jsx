@@ -1,6 +1,6 @@
 // HOME - FINAL CLEAN ZERO FAKE - NO DUMMY 245, NO FAKE NUMBERS - REAL DATA ONLY FROM SUPABASE
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator, Alert, Linking } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,7 +13,7 @@ import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { useTheme } from '../context/ThemeContext';
-import OSMMap from '../components/OSMMap';
+import GoogleWebMap from '../components/GoogleWebMap';
 
 // Standalone APK stability mode: keep Home off native Google MapView.
 // Native MapView/GPS startup can hard-crash some Android builds. GPS still works
@@ -30,8 +30,7 @@ if (ENABLE_HOME_NATIVE_MAP && Platform.OS !== 'web') {
 export default function DashboardScreen() {
   const { colors } = useTheme();
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
-  const [locationStatus, setLocationStatus] = useState('GPS ready on request');
-  const [isLocating, setIsLocating] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('GPS starting...');
 
   // Keep previous values to avoid 0 flash
   const [myClientsCount, setMyClientsCount] = useState(0);
@@ -50,10 +49,38 @@ export default function DashboardScreen() {
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
 
   useEffect(() => {
-    // Do not auto-request GPS from Home. Some standalone Android builds can
-    // close around the first permission/location/map cycle. Field verification
-    // screens request GPS when the user actually needs it.
-    setLocationStatus('Ready — GPS verifies during check-in');
+    let active = true;
+    // Safe delayed GPS request. The previous APK crash came from native MapView,
+    // not this location call. Delaying keeps startup smooth before Android prompt.
+    const timer = setTimeout(async () => {
+      try {
+        setLocationStatus('Requesting GPS...');
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (!active) return;
+        if (permission.status !== 'granted') {
+          setLocationStatus('GPS permission denied');
+          return;
+        }
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude, accuracy } = location.coords;
+        const safeCoords = { latitude: Number(latitude), longitude: Number(longitude) };
+        if (!Number.isFinite(safeCoords.latitude) || !Number.isFinite(safeCoords.longitude)) throw new Error('Invalid GPS coordinates');
+        OrderStore.repLocation = safeCoords;
+        RouteStore.repLocation = safeCoords;
+        if (active) {
+          setRepCoordinates(safeCoords);
+          setLocationStatus(`GPS Active 🟢 ±${Math.round(accuracy || 0)}m`);
+        }
+      } catch (e) {
+        console.log('Home GPS error', e.message);
+        if (active) setLocationStatus('GPS unavailable');
+      }
+    }, 1200);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   useFocusEffect(
@@ -135,50 +162,6 @@ export default function DashboardScreen() {
     longitude: repCoords.longitude,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
-  };
-
-  const handleEnableGps = async () => {
-    if (isLocating) return;
-    setIsLocating(true);
-    setLocationStatus('Requesting GPS...');
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setLocationStatus('GPS permission denied');
-        Alert.alert('GPS Permission Needed', 'Allow location permission when you want FS Hub to show your current field position.');
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude, accuracy } = location.coords;
-      const safeCoords = { latitude: Number(latitude), longitude: Number(longitude) };
-      if (!Number.isFinite(safeCoords.latitude) || !Number.isFinite(safeCoords.longitude)) {
-        throw new Error('Phone returned invalid GPS coordinates.');
-      }
-
-      OrderStore.repLocation = safeCoords;
-      RouteStore.repLocation = safeCoords;
-      setRepCoordinates(safeCoords);
-      setLocationStatus(`GPS Active 🟢 ±${Math.round(accuracy || 0)}m`);
-    } catch (e) {
-      console.log('Home GPS error', e.message);
-      setLocationStatus('GPS unavailable');
-      Alert.alert('GPS Error', e.message || 'Could not read your current location.');
-    } finally {
-      setIsLocating(false);
-    }
-  };
-
-  const handleOpenExternalMap = async () => {
-    const lat = Number(repCoords.latitude);
-    const lon = Number(repCoords.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      Alert.alert('No GPS yet', 'Tap Enable GPS first so we can open your current position.');
-      return;
-    }
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-    const supported = await Linking.canOpenURL(url);
-    if (supported) await Linking.openURL(url);
   };
 
   const renderAvatar = () => {
@@ -271,34 +254,12 @@ export default function DashboardScreen() {
           <Text style={styles.radarSub}>Blue = You • Red = Your clients</Text>
           <View style={styles.mapWrapper}>
             {Platform.OS === 'web' || !MapView ? (
-              <View style={styles.webMapFallback}>
-                <OSMMap
-                  center={repCoords}
-                  markers={OrderStore.clients.slice(0, 50).map(store => ({
-                    id: store.id,
-                    coordinate: store.coordinate,
-                    title: store.name,
-                    description: store.address,
-                    color: '#EF4444'
-                  }))}
-                  height={155}
-                  zoom={13}
-                />
-                <Text style={styles.webMapTitle}>OpenStreetMap Territory Radar</Text>
-                <Text style={styles.webMapSub}>Lat {Number(repCoords.latitude).toFixed(4)} | Lon {Number(repCoords.longitude).toFixed(4)}</Text>
-                <Text style={styles.webMapSmall}>Free embedded map powered by OpenStreetMap. Tap Enable GPS to update your field position.</Text>
-                <View style={styles.mapButtonRow}>
-                  <TouchableOpacity style={styles.viewMapBtn} onPress={handleEnableGps} disabled={isLocating}>
-                    <Text style={styles.viewMapText}>{isLocating ? 'Locating...' : 'Enable GPS'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.viewMapBtn} onPress={handleOpenExternalMap}>
-                    <Text style={styles.viewMapText}>Open Maps →</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity style={[styles.viewMapBtn, { marginTop: 8 }]} onPress={() => router.push('/territories')}>
-                  <Text style={styles.viewMapText}>View Client List →</Text>
-                </TouchableOpacity>
-              </View>
+              <GoogleWebMap
+                center={repCoords}
+                height={300}
+                zoom={14}
+                label="FS Hub Field Position"
+              />
             ) : (
               <MapView style={styles.realMap} initialRegion={currentRegion} showsUserLocation={true} showsMyLocationButton={true}>
                 <Marker coordinate={repCoords} title="Your Position" description={locationStatus} pinColor="blue" />
@@ -395,12 +356,6 @@ const styles = StyleSheet.create({
   radarSub: { fontSize: 10, color: '#64748B', marginBottom: 8 },
   mapWrapper: { height: 300, borderRadius: 12, overflow: 'hidden', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
   webMapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
-  webMapTitle: { fontSize: 14, fontWeight: '800', color: '#1E3A8A', marginTop: 8 },
-  webMapSub: { fontSize: 12, color: '#059669', marginTop: 4 },
-  webMapSmall: { fontSize: 10, color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 14 },
-  mapButtonRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  viewMapBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 0 },
-  viewMapText: { color: '#2563EB', fontSize: 11, fontWeight: '800' },
   realMap: { width: '100%', height: '100%' },
   cleanBanner: { flexDirection: 'row', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 14, padding: 14, marginBottom: 16, alignItems: 'flex-start' },
   cleanTitle: { fontSize: 13, fontWeight: '900', color: '#065F46' },
