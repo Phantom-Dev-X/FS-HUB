@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +27,7 @@ const validatePassword = (pwd) => {
 
 export default function ResetPasswordScreen() {
   const { colors } = useTheme();
+  const params = useLocalSearchParams();
   const [isPreparing, setIsPreparing] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   const [errorText, setErrorText] = useState('');
@@ -52,7 +53,9 @@ export default function ResetPasswordScreen() {
     let mounted = true;
 
     (async () => {
-      const initialUrl = await Linking.getInitialURL();
+      const forwardedLink = Array.isArray(params.link) ? params.link[0] : params.link;
+      const decodedForwardedLink = forwardedLink ? decodeURIComponent(forwardedLink) : null;
+      const initialUrl = decodedForwardedLink || await Linking.getInitialURL();
       if (!mounted) return;
       if (initialUrl) {
         await prepareSessionFromUrl(initialUrl);

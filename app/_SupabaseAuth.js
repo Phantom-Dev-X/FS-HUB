@@ -52,6 +52,17 @@ const parseAuthParamsFromUrl = (url) => {
   };
 };
 
+export const isPasswordRecoveryUrl = (url) => {
+  if (!url) return false;
+  const params = parseAuthParamsFromUrl(url);
+  return (
+    params.type === 'recovery' ||
+    url.includes('type=recovery') ||
+    url.includes('reset-password') ||
+    (Boolean(params.access_token) && Boolean(params.refresh_token))
+  );
+};
+
 export const SupabaseAuth = {
   signUpRep: async function({ email, password, metadata = {} }) {
     try {

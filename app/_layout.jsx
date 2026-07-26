@@ -1,12 +1,31 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { ThemeProvider } from '../context/ThemeContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import * as Linking from 'expo-linking';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
+import { isPasswordRecoveryUrl } from './_SupabaseAuth';
 
 export default function RootLayout() {
+  useEffect(() => {
+    const routeDeepLink = (url) => {
+      if (!url) return;
+      if (isPasswordRecoveryUrl(url)) {
+        // Delay lets Expo Router finish mounting before we navigate.
+        setTimeout(() => {
+          router.replace({ pathname: '/reset-password', params: { link: encodeURIComponent(url) } });
+        }, 150);
+      }
+    };
+
+    Linking.getInitialURL().then(routeDeepLink).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => routeDeepLink(url));
+
+    return () => subscription?.remove?.();
+  }, []);
+
   useEffect(() => {
     // Initialize database and load reps/clients into memory for instant access
     (async () => {
