@@ -3,8 +3,9 @@ import { Stack, router } from 'expo-router';
 import { ThemeProvider } from '../context/ThemeContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
 
@@ -52,6 +53,46 @@ class RootErrorBoundary extends React.Component {
 }
 
 function AppStack() {
+  useEffect(() => {
+    // OTA update checker. Expo does not show update popups by default — this does.
+    // Note: the update that introduces this checker must first be installed/applied;
+    // after that, future updates can show this prompt.
+    let active = true;
+    const checkForOtaUpdate = async () => {
+      try {
+        if (__DEV__ || !Updates.isEnabled) return;
+        const update = await Updates.checkForUpdateAsync();
+        if (!active || !update.isAvailable) return;
+
+        Alert.alert(
+          'FS Hub Update Available',
+          'A new FS Hub update is ready. Download and restart now?',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Update Now',
+              onPress: async () => {
+                try {
+                  await Updates.fetchUpdateAsync();
+                  await Updates.reloadAsync();
+                } catch (e) {
+                  Alert.alert('Update Failed', e.message || 'Could not apply update. Please retry later.');
+                }
+              }
+            }
+          ]
+        );
+      } catch (e) {
+        console.log('[FS-HUB] OTA check skipped:', e.message);
+      }
+    };
+
+    setTimeout(checkForOtaUpdate, 2500);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     const routeDeepLink = (url) => {
       if (!url) return;
