@@ -1,6 +1,6 @@
 // HOME - FINAL CLEAN ZERO FAKE - NO DUMMY 245, NO FAKE NUMBERS - REAL DATA ONLY FROM SUPABASE
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, ActivityIndicator, Alert, Linking } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -29,8 +29,9 @@ if (ENABLE_HOME_NATIVE_MAP && Platform.OS !== 'web') {
 export default function DashboardScreen() {
   const { colors } = useTheme();
   const [repCoords, setRepCoordinates] = useState(OrderStore.repLocation);
-  const [locationStatus, setLocationStatus] = useState('Checking GPS...');
-  
+  const [locationStatus, setLocationStatus] = useState('GPS ready on request');
+  const [isLocating, setIsLocating] = useState(false);
+
   // Keep previous values to avoid 0 flash
   const [myClientsCount, setMyClientsCount] = useState(0);
   const [offlineCount, setOfflineCount] = useState(0);
@@ -135,6 +136,50 @@ export default function DashboardScreen() {
     longitudeDelta: 0.05,
   };
 
+  const handleEnableGps = async () => {
+    if (isLocating) return;
+    setIsLocating(true);
+    setLocationStatus('Requesting GPS...');
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setLocationStatus('GPS permission denied');
+        Alert.alert('GPS Permission Needed', 'Allow location permission when you want FS Hub to show your current field position.');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude, accuracy } = location.coords;
+      const safeCoords = { latitude: Number(latitude), longitude: Number(longitude) };
+      if (!Number.isFinite(safeCoords.latitude) || !Number.isFinite(safeCoords.longitude)) {
+        throw new Error('Phone returned invalid GPS coordinates.');
+      }
+
+      OrderStore.repLocation = safeCoords;
+      RouteStore.repLocation = safeCoords;
+      setRepCoordinates(safeCoords);
+      setLocationStatus(`GPS Active 🟢 ±${Math.round(accuracy || 0)}m`);
+    } catch (e) {
+      console.log('Home GPS error', e.message);
+      setLocationStatus('GPS unavailable');
+      Alert.alert('GPS Error', e.message || 'Could not read your current location.');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  const handleOpenExternalMap = async () => {
+    const lat = Number(repCoords.latitude);
+    const lon = Number(repCoords.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      Alert.alert('No GPS yet', 'Tap Enable GPS first so we can open your current position.');
+      return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+    const supported = await Linking.canOpenURL(url);
+    if (supported) await Linking.openURL(url);
+  };
+
   const renderAvatar = () => {
     return (
       <View style={styles.avatarWrapper}>
@@ -227,11 +272,19 @@ export default function DashboardScreen() {
             {Platform.OS === 'web' || !MapView ? (
               <View style={styles.webMapFallback}>
                 <Ionicons name="map-outline" size={32} color="#2563EB" />
-                <Text style={styles.webMapTitle}>Your Territory Map</Text>
-                <Text style={styles.webMapSub}>Lat {repCoords.latitude.toFixed(4)} | Lon {repCoords.longitude.toFixed(4)}</Text>
-                <Text style={styles.webMapSmall}>Shows your assigned client network</Text>
-                <TouchableOpacity style={styles.viewMapBtn} onPress={() => router.push('/territories')}>
-                  <Text style={styles.viewMapText}>View Full Map →</Text>
+                <Text style={styles.webMapTitle}>Safe GPS Radar</Text>
+                <Text style={styles.webMapSub}>Lat {Number(repCoords.latitude).toFixed(4)} | Lon {Number(repCoords.longitude).toFixed(4)}</Text>
+                <Text style={styles.webMapSmall}>Embedded Google Map is disabled until an Android Maps API key is added. GPS can still verify your field position safely.</Text>
+                <View style={styles.mapButtonRow}>
+                  <TouchableOpacity style={styles.viewMapBtn} onPress={handleEnableGps} disabled={isLocating}>
+                    <Text style={styles.viewMapText}>{isLocating ? 'Locating...' : 'Enable GPS'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.viewMapBtn} onPress={handleOpenExternalMap}>
+                    <Text style={styles.viewMapText}>Open Maps →</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={[styles.viewMapBtn, { marginTop: 8 }]} onPress={() => router.push('/territories')}>
+                  <Text style={styles.viewMapText}>View Client List →</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -333,7 +386,8 @@ const styles = StyleSheet.create({
   webMapTitle: { fontSize: 14, fontWeight: '800', color: '#1E3A8A', marginTop: 8 },
   webMapSub: { fontSize: 12, color: '#059669', marginTop: 4 },
   webMapSmall: { fontSize: 10, color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 14 },
-  viewMapBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 10 },
+  mapButtonRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  viewMapBtn: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginTop: 0 },
   viewMapText: { color: '#2563EB', fontSize: 11, fontWeight: '800' },
   realMap: { width: '100%', height: '100%' },
   cleanBanner: { flexDirection: 'row', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 14, padding: 14, marginBottom: 16, alignItems: 'flex-start' },
