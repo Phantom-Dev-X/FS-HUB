@@ -1,8 +1,9 @@
+import React, { useEffect } from 'react';
 import { Stack, router } from 'expo-router';
 import { ThemeProvider } from '../context/ThemeContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
@@ -16,7 +17,41 @@ const isPasswordRecoveryUrl = (url) => {
   );
 };
 
-export default function RootLayout() {
+class RootErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.log('[RootErrorBoundary]', error?.message, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaProvider>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: '#DC2626', marginBottom: 10 }}>FS Hub startup error</Text>
+            <Text style={{ color: '#334155', textAlign: 'center', lineHeight: 20 }}>
+              {this.state.error?.message || 'Unknown startup error'}
+            </Text>
+            <Text style={{ color: '#64748B', textAlign: 'center', marginTop: 14, fontSize: 12 }}>
+              Send this message to support so we can patch it with OTA or a new build.
+            </Text>
+          </View>
+        </SafeAreaProvider>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppStack() {
   useEffect(() => {
     const routeDeepLink = (url) => {
       if (!url) return;
@@ -35,25 +70,30 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    // Initialize database and load reps/clients into memory for instant access
+    // Initialize database and load reps/clients into memory for instant access.
+    // All failures are caught so a network/Supabase issue can never close the APK at startup.
     (async () => {
-      await DatabaseEngine.initDatabase();
-      const reps = await DatabaseEngine.getAllReps();
-      const clients = await DatabaseEngine.getAllClients();
-      const catalog = await DatabaseEngine.getCatalog();
-      
-      // Populate OrderStore memory from local DB
-      OrderStore.activeReps = reps;
-      OrderStore.clients = clients;
-      OrderStore.catalog = catalog;
+      try {
+        await DatabaseEngine.initDatabase();
+        const [reps, clients, catalog] = await Promise.all([
+          DatabaseEngine.getAllReps(),
+          DatabaseEngine.getAllClients(),
+          DatabaseEngine.getCatalog(),
+        ]);
 
-      // Try to restore session
-      const session = await DatabaseEngine.getSession();
-      if (session) {
-        OrderStore.setCurrentAgent(session);
+        OrderStore.activeReps = reps || [];
+        OrderStore.clients = clients || [];
+        OrderStore.catalog = catalog || [];
+
+        const session = await DatabaseEngine.getSession();
+        if (session) {
+          OrderStore.setCurrentAgent(session);
+        }
+
+        console.log(`[FS-HUB] DB Initialized: ${OrderStore.activeReps.length} reps, ${OrderStore.clients.length} clients, ${OrderStore.catalog.length} products`);
+      } catch (e) {
+        console.log('[FS-HUB] Startup init skipped:', e.message);
       }
-
-      console.log(`[FS-HUB] DB Initialized: ${reps.length} reps, ${clients.length} clients, ${catalog.length} products`);
     })();
   }, []);
 
@@ -90,5 +130,13 @@ export default function RootLayout() {
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <RootErrorBoundary>
+      <AppStack />
+    </RootErrorBoundary>
   );
 }
