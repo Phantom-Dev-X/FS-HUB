@@ -1,6 +1,6 @@
 // ADD CLIENT - WHITE PREMIUM ELEGANT, ZERO FAKE, LINKED TO SUPABASE
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Platform, Modal } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,14 +12,7 @@ import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-
-let MapView = null;
-let Marker = null;
-if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-}
+import GoogleWebMap from '../components/GoogleWebMap';
 
 export default function AddClientScreen() {
   const { colors } = useTheme();
@@ -237,34 +230,27 @@ export default function AddClientScreen() {
         <SafeAreaView style={styles.mapModal}>
           <View style={styles.mapHeader}>
             <TouchableOpacity onPress={() => setMapVisible(false)}><Text style={styles.mapCancel}>Cancel</Text></TouchableOpacity>
-            <Text style={styles.mapTitle}>Tap the exact store location</Text>
-            <TouchableOpacity onPress={() => location && setMapVisible(false)} disabled={!location}><Text style={[styles.mapDone, !location && { opacity: 0.4 }]}>Use Pin</Text></TouchableOpacity>
+            <Text style={styles.mapTitle}>Store Location Preview</Text>
+            <TouchableOpacity onPress={() => location && setMapVisible(false)} disabled={!location}><Text style={[styles.mapDone, !location && { opacity: 0.4 }]}>Use Location</Text></TouchableOpacity>
           </View>
-          {Platform.OS === 'web' || !MapView ? (
-            <View style={styles.mapUnavailable}><Text>Map selection is available on Android/iOS. Use current location here.</Text></View>
-          ) : (
-            <MapView
-              style={{ flex: 1 }}
-              initialRegion={{
-                latitude: location?.latitude || OrderStore.repLocation.latitude,
-                longitude: location?.longitude || OrderStore.repLocation.longitude,
-                latitudeDelta: 0.02,
-                longitudeDelta: 0.02
-              }}
-              showsUserLocation
-              onPress={(event) => {
-                const { latitude, longitude } = event.nativeEvent.coordinate;
-                setLocation({ latitude, longitude, accuracy: null });
-                setLocationMethod('map_selected');
-              }}
-            >
-              {location && <Marker coordinate={location} draggable onDragEnd={(event) => {
-                const { latitude, longitude } = event.nativeEvent.coordinate;
-                setLocation({ latitude, longitude, accuracy: null });
-                setLocationMethod('map_selected');
-              }} />}
-            </MapView>
-          )}
+          <View style={styles.safeMapBody}>
+            <GoogleWebMap
+              center={location || OrderStore.repLocation}
+              height={300}
+              zoom={16}
+              label={storeName || 'New Client Store'}
+            />
+            <Text style={styles.safeMapHint}>Native pin-dragging is disabled in APK mode to prevent crashes. Stand at the store and use current GPS for exact capture.</Text>
+            {location && (
+              <View style={styles.locationResult}>
+                <Text style={styles.locationResultTitle}>✓ Selected coordinates</Text>
+                <Text style={styles.locationResultText}>{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.locationPrimary} onPress={captureCurrentLocation} disabled={isLocating}>
+              {isLocating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.locationPrimaryText}>📍 Use My Current GPS Here</Text>}
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -303,5 +289,6 @@ const styles = StyleSheet.create({
   mapTitle: { color: '#0F172A', fontWeight: '900', fontSize: 13 },
   mapCancel: { color: '#EF4444', fontWeight: '800' },
   mapDone: { color: '#2563EB', fontWeight: '900' },
-  mapUnavailable: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
+  safeMapBody: { flex: 1, padding: 16, backgroundColor: '#F8FAFC' },
+  safeMapHint: { color: '#64748B', fontSize: 12, lineHeight: 18, textAlign: 'center', marginVertical: 12 },
 });

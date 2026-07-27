@@ -16,12 +16,6 @@ import GoogleWebMap from '../components/GoogleWebMap';
 // We still list all reps below; full native map can be re-enabled after coordinate cleanup.
 let MapView = null;
 let Marker = null;
-const ENABLE_ADMIN_NATIVE_MAP = false;
-if (ENABLE_ADMIN_NATIVE_MAP && Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-}
 
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;

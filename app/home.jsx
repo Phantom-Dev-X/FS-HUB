@@ -20,12 +20,6 @@ import GoogleWebMap from '../components/GoogleWebMap';
 // in Add Client / Visit flows where it is required for verification.
 let MapView = null;
 let Marker = null;
-const ENABLE_HOME_NATIVE_MAP = false;
-if (ENABLE_HOME_NATIVE_MAP && Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-}
 
 export default function DashboardScreen() {
   const { colors } = useTheme();

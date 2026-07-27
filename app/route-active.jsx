@@ -1,6 +1,6 @@
 // ROUTE ACTIVE - WHITE PREMIUM FIXED
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Platform, Linking, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Linking, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,16 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { RouteStore } from './RouteStore';
-
-let MapView = null;
-let Marker = null;
-let Polyline = null;
-if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  Polyline = Maps.Polyline;
-}
+import GoogleWebMap from '../components/GoogleWebMap';
 
 export default function RouteActiveScreen() {
   const { colors } = useTheme();
@@ -29,8 +20,6 @@ export default function RouteActiveScreen() {
     setActiveStores(updated);
     RouteStore.clients = RouteStore.clients.map(c => c.id === id ? { ...c, visited: !c.visited } : c);
   };
-
-  const routeCoordinates = [repLoc, ...activeStores.map(s => s.coordinate)];
 
   const openExternalGoogleMaps = () => {
     if (activeStores.length === 0) return;
@@ -71,21 +60,12 @@ export default function RouteActiveScreen() {
         </View>
 
         <View style={styles.routeMapContainer}>
-          {Platform.OS === 'web' || !MapView ? (
-            <View style={styles.webFallback}>
-              <Text style={{ fontSize: 36 }}>🗺️</Text>
-              <Text style={styles.webTitle}>Active Route Ready</Text>
-              <Text style={styles.webSub}>{activeStores.length} stops</Text>
-            </View>
-          ) : (
-            <MapView style={styles.realMap} initialRegion={{ latitude: repLoc.latitude, longitude: repLoc.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }} showsUserLocation={true}>
-              <Marker coordinate={repLoc} title="Start" pinColor="blue" />
-              {activeStores.map(store => (
-                <Marker key={store.id} coordinate={store.coordinate} title={store.name} pinColor={store.visited ? 'orange' : 'green'} />
-              ))}
-              {Polyline && <Polyline coordinates={routeCoordinates} strokeColor="#2563EB" strokeWidth={4} />}
-            </MapView>
-          )}
+          <GoogleWebMap
+            center={activeStores[0]?.coordinate || repLoc}
+            height={280}
+            zoom={13}
+            label={activeStores[0]?.name || 'FS Hub Active Route'}
+          />
         </View>
 
         <TouchableOpacity style={styles.navBtn} onPress={openExternalGoogleMaps}>
