@@ -239,8 +239,13 @@ export default function AddClientScreen() {
               height={300}
               zoom={16}
               label={storeName || 'New Client Store'}
+              draggablePicker
+              onLocationSelected={(selected) => {
+                setLocation(selected);
+                setLocationMethod('map_selected');
+              }}
             />
-            <Text style={styles.safeMapHint}>Native pin-dragging is disabled in APK mode to prevent crashes. Stand at the store and use current GPS for exact capture.</Text>
+            <Text style={styles.safeMapHint}>Tap the map or drag the blue pin to choose the exact store location. You can also stand at the store and use current GPS.</Text>
             {location && (
               <View style={styles.locationResult}>
                 <Text style={styles.locationResultTitle}>✓ Selected coordinates</Text>
