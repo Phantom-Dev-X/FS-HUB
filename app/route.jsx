@@ -21,6 +21,13 @@ export default function RouteOverviewScreen() {
     <View style={styles.container}>
       <GoogleWebMap
         center={repLoc}
+        markers={RouteStore.clients.slice(0, 12).map(store => ({
+          id: store.id,
+          coordinate: store.coordinate,
+          title: store.name,
+          description: store.address,
+          color: '#EF4444',
+        }))}
         height="100%"
         zoom={13}
         label="FS Hub Route Radar"

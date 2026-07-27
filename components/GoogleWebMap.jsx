@@ -50,8 +50,6 @@ export default function GoogleWebMap({
     const markerJson = JSON.stringify(safeMarkers).replace(/</g, '\\u003c');
     const escapedLabel = String(label).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/`/g, '');
 
-    // CARTO Voyager tiles are fast, polished, no-card/no-Google-Cloud, and support real Leaflet pins.
-    // This is intentionally a WebView map, not native react-native-maps, to avoid Android API key crashes.
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -65,10 +63,18 @@ export default function GoogleWebMap({
     .pin-inner { width:6px; height:6px; background:white; border-radius:50%; margin:5px; }
     .pin-wrap { transform: rotate(45deg); }
     .picker-help { position:absolute; left:10px; right:10px; bottom:10px; z-index:999; background:rgba(15,23,42,.88); color:white; border-radius:12px; padding:9px 11px; font-family:Arial; font-size:12px; text-align:center; }
+    .style-switcher { position:absolute; top:10px; left:10px; right:10px; z-index:999; display:flex; gap:6px; justify-content:center; pointer-events:auto; }
+    .style-btn { border:1px solid rgba(37,99,235,.3); background:rgba(255,255,255,.94); color:#1E3A8A; border-radius:999px; padding:7px 11px; font-family:Arial; font-size:11px; font-weight:800; box-shadow:0 2px 8px rgba(15,23,42,.15); }
+    .style-btn.active { background:#2563EB; color:white; border-color:#2563EB; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div class="style-switcher">
+    <button class="style-btn active" data-style="here">HERE</button>
+    <button class="style-btn" data-style="maptiler">MapTiler</button>
+    <button class="style-btn" data-style="sdk">SDK</button>
+  </div>
   ${draggablePicker ? '<div class="picker-help">Tap the map or drag the blue pin to select exact store location</div>' : ''}
   <script>
     const center = [${safeCenter.latitude}, ${safeCenter.longitude}];
@@ -76,11 +82,41 @@ export default function GoogleWebMap({
     const draggablePicker = ${draggablePicker ? 'true' : 'false'};
     const map = L.map('map', { zoomControl:true, attributionControl:true }).setView(center, ${Number(zoom) || 14});
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20,
-      subdomains: 'abcd',
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-    }).addTo(map);
+    const layerDefs = {
+      // HERE-ish: fast, detailed street/cartography feel using Esri streets.
+      here: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 19, attribution: 'Tiles &copy; Esri, HERE, Garmin, OpenStreetMap contributors' }
+      },
+      // MapTiler-ish: bright, modern OSM-based street style using CARTO Voyager.
+      maptiler: {
+        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        options: { maxZoom: 20, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }
+      },
+      // SDK-style: satellite imagery view for field/location checks.
+      sdk: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 19, attribution: 'Tiles &copy; Esri' }
+      }
+    };
+
+    let activeLayer = L.tileLayer(layerDefs.here.url, layerDefs.here.options).addTo(map);
+
+    function setLayer(name) {
+      if (!layerDefs[name]) return;
+      map.removeLayer(activeLayer);
+      activeLayer = L.tileLayer(layerDefs[name].url, layerDefs[name].options).addTo(map);
+      document.querySelectorAll('.style-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-style') === name);
+      });
+    }
+
+    document.querySelectorAll('.style-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        setLayer(btn.getAttribute('data-style'));
+      });
+    });
 
     function icon(color) {
       return L.divIcon({
@@ -118,7 +154,7 @@ export default function GoogleWebMap({
     });
 
     if (allPoints.length > 1) {
-      map.fitBounds(allPoints, { padding:[28, 28], maxZoom:15 });
+      map.fitBounds(allPoints, { padding:[34, 34], maxZoom:15 });
     }
   </script>
 </body>
