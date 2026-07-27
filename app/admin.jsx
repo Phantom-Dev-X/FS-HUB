@@ -565,6 +565,11 @@ export default function AdminDashboardScreen() {
                 <View style={[styles.webFallbackBox, { backgroundColor: colors.card }]}>
                   <GoogleWebMap
                     center={OrderStore.repLocation}
+                    markers={activeReps.slice(0, 8).map(rep => ({
+                      id: rep.id || rep.email,
+                      coordinate: rep.coordinate || OrderStore.repLocation,
+                      title: rep.name || rep.full_name || rep.email || 'Rep',
+                    }))}
                     height={260}
                     zoom={12}
                     label="FS Hub Reps Radar"

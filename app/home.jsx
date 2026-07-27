@@ -250,6 +250,11 @@ export default function DashboardScreen() {
             {Platform.OS === 'web' || !MapView ? (
               <GoogleWebMap
                 center={repCoords}
+                markers={OrderStore.clients.slice(0, 8).map(store => ({
+                  id: store.id,
+                  coordinate: store.coordinate,
+                  title: store.name,
+                }))}
                 height={300}
                 zoom={14}
                 label="FS Hub Field Position"

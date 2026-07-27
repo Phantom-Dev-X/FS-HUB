@@ -52,6 +52,11 @@ export default function TerritoriesScreen() {
           <View style={styles.mapCard}>
             <GoogleWebMap
               center={clients.find(c => c.coordinate)?.coordinate || OrderStore.repLocation}
+              markers={clients.slice(0, 8).map(client => ({
+                id: client.id,
+                coordinate: client.coordinate,
+                title: client.name,
+              }))}
               height={220}
               zoom={13}
               label="FS Hub Territory"

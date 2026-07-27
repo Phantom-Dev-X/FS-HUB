@@ -61,10 +61,15 @@ export default function RouteActiveScreen() {
 
         <View style={styles.routeMapContainer}>
           <GoogleWebMap
-            center={activeStores[0]?.coordinate || repLoc}
+            center={repLoc}
+            markers={activeStores.slice(0, 8).map(store => ({
+              id: store.id,
+              coordinate: store.coordinate,
+              title: store.name,
+            }))}
             height={280}
             zoom={13}
-            label={activeStores[0]?.name || 'FS Hub Active Route'}
+            label="FS Hub Active Route"
           />
         </View>
 

@@ -10,26 +10,47 @@ const toNumber = (value) => {
 };
 
 const normalizeCoordinate = (coordinate) => {
-  if (!coordinate) return FALLBACK_CENTER;
+  if (!coordinate) return null;
   const latitude = toNumber(coordinate.latitude ?? coordinate.lat);
   const longitude = toNumber(coordinate.longitude ?? coordinate.lng ?? coordinate.lon);
-  if (latitude === null || longitude === null) return FALLBACK_CENTER;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return FALLBACK_CENTER;
+  if (latitude === null || longitude === null) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
   return { latitude, longitude };
 };
 
-export default function GoogleWebMap({ center = FALLBACK_CENTER, height = 220, zoom = 14, label = 'FS Hub Field Position' }) {
+const normalizeMarkers = (markers = []) => markers
+  .map((marker, index) => {
+    const coordinate = normalizeCoordinate(marker.coordinate || marker);
+    if (!coordinate) return null;
+    return {
+      id: String(marker.id || index),
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+      title: String(marker.title || marker.name || `Stop ${index + 1}`),
+    };
+  })
+  .filter(Boolean);
+
+const pointToPath = (point) => encodeURIComponent(`${point.latitude},${point.longitude}`);
+
+export default function GoogleWebMap({ center = FALLBACK_CENTER, markers = [], height = 220, zoom = 14, label = 'FS Hub Field Position' }) {
   const [hasError, setHasError] = useState(false);
-  const safeCenter = normalizeCoordinate(center);
+  const safeCenter = normalizeCoordinate(center) || FALLBACK_CENTER;
+  const safeMarkers = useMemo(() => normalizeMarkers(markers), [markers]);
 
   const html = useMemo(() => {
-    const lat = encodeURIComponent(String(safeCenter.latitude));
-    const lon = encodeURIComponent(String(safeCenter.longitude));
     const q = encodeURIComponent(`${safeCenter.latitude},${safeCenter.longitude} (${label})`);
-    const mapUrl = `https://maps.google.com/maps?q=${q}&ll=${lat},${lon}&z=${Number(zoom) || 14}&output=embed`;
+    let mapUrl = `https://maps.google.com/maps?q=${q}&ll=${encodeURIComponent(String(safeCenter.latitude))},${encodeURIComponent(String(safeCenter.longitude))}&z=${Number(zoom) || 14}&output=embed`;
 
-    // Google Maps embed URLs must be loaded inside an iframe. Loading the URL
-    // directly in WebView shows "must be embedded in an iframe" on some devices.
+    // No-key Google iframe cannot do true custom JS markers. This workaround
+    // uses Google Maps Directions URL when multiple coordinates are available;
+    // Google then renders the stops/pins itself. It is limited, but gives visible pins without Google Cloud billing.
+    const points = [safeCenter, ...safeMarkers].slice(0, 10);
+    if (points.length >= 2) {
+      const path = points.map(pointToPath).join('/');
+      mapUrl = `https://www.google.com/maps/dir/${path}/?hl=en&z=${Number(zoom) || 13}&output=embed`;
+    }
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -49,7 +70,7 @@ export default function GoogleWebMap({ center = FALLBACK_CENTER, height = 220, z
   </iframe>
 </body>
 </html>`;
-  }, [safeCenter.latitude, safeCenter.longitude, zoom, label]);
+  }, [safeCenter.latitude, safeCenter.longitude, safeMarkers, zoom, label]);
 
   if (Platform.OS === 'web') {
     return (
@@ -72,7 +93,7 @@ export default function GoogleWebMap({ center = FALLBACK_CENTER, height = 220, z
     <View style={[styles.wrapper, { height }]}>
       <WebView
         originWhitelist={['*']}
-        source={{ html, baseUrl: 'https://maps.google.com/' }}
+        source={{ html, baseUrl: 'https://www.google.com/' }}
         javaScriptEnabled
         domStorageEnabled
         geolocationEnabled
