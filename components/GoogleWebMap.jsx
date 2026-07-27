@@ -1,28 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
 
 const FALLBACK_CENTER = { latitude: 6.6018, longitude: 3.3515 };
 
+// One map only for now: Native MapLibre SDK + OpenFreeMap Liberty style.
+// This is not WebView and does not need Google/HERE/Mapbox billing.
+// Later we can swap this style URL to Mapbox/MapTiler/HERE if you provide an API key.
+const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+
 try {
-  // MapLibre does not require an access token for open styles.
+  // MapLibre does not require an access token for open/free styles.
   MapLibreGL.setAccessToken(null);
 } catch {}
-
-const MAP_STYLES = {
-  here: {
-    label: 'HERE',
-    url: 'https://tiles.openfreemap.org/styles/liberty',
-  },
-  maptiler: {
-    label: 'MapTiler',
-    url: 'https://tiles.openfreemap.org/styles/bright',
-  },
-  sdk: {
-    label: 'SDK',
-    url: 'https://tiles.openfreemap.org/styles/positron',
-  },
-};
 
 const toNumber = (value) => {
   const num = Number(value);
@@ -73,12 +63,9 @@ export default function GoogleWebMap({
   draggablePicker = false,
   onLocationSelected,
 }) {
-  const [styleKey, setStyleKey] = useState('here');
   const [pickerCoordinate, setPickerCoordinate] = useState(normalizeCoordinate(center) || FALLBACK_CENTER);
   const safeCenter = normalizeCoordinate(center) || FALLBACK_CENTER;
   const safeMarkers = useMemo(() => normalizeMarkers(markers), [markers]);
-  const mapStyleURL = MAP_STYLES[styleKey]?.url || MAP_STYLES.here.url;
-
   const selectedCoordinate = draggablePicker ? pickerCoordinate : safeCenter;
 
   const handleSelectCoordinate = (coordinate) => {
@@ -99,7 +86,7 @@ export default function GoogleWebMap({
     <View style={[styles.wrapper, { height }]}>
       <MapLibreGL.MapView
         style={styles.map}
-        styleURL={mapStyleURL}
+        styleURL={MAP_STYLE_URL}
         logoEnabled={false}
         attributionEnabled={false}
         compassEnabled
@@ -142,18 +129,6 @@ export default function GoogleWebMap({
           <MapLibreGL.Callout title={draggablePicker ? 'Drag or tap map to select this location' : label} />
         </MapLibreGL.PointAnnotation>
       </MapLibreGL.MapView>
-
-      <View style={styles.styleSwitcher} pointerEvents="box-none">
-        {Object.entries(MAP_STYLES).map(([key, style]) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.styleBtn, styleKey === key && styles.styleBtnActive]}
-            onPress={() => setStyleKey(key)}
-          >
-            <Text style={[styles.styleBtnText, styleKey === key && styles.styleBtnTextActive]}>{style.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
 
       {draggablePicker && (
         <View style={styles.helpBox} pointerEvents="none">
@@ -206,35 +181,6 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: '#FFFFFF',
-  },
-  styleSwitcher: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  styleBtn: {
-    backgroundColor: 'rgba(255,255,255,0.94)',
-    borderWidth: 1,
-    borderColor: 'rgba(37,99,235,0.3)',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  styleBtnActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  styleBtnText: {
-    color: '#1E3A8A',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  styleBtnTextActive: {
-    color: '#FFFFFF',
   },
   helpBox: {
     position: 'absolute',
