@@ -101,8 +101,13 @@ create table if not exists public.fshub_orders (
 );
 alter table public.fshub_orders add column if not exists store_name text;
 alter table public.fshub_orders add column if not exists rep_id text;
+alter table public.fshub_orders add column if not exists client_name text;
+alter table public.fshub_orders add column if not exists grand_total numeric not null default 0;
+alter table public.fshub_orders add column if not exists total_amount numeric not null default 0;
 alter table public.fshub_orders add column if not exists payable_total numeric not null default 0;
+alter table public.fshub_orders add column if not exists discount_amount numeric not null default 0;
 alter table public.fshub_orders add column if not exists order_items jsonb not null default '[]'::jsonb;
+alter table public.fshub_orders add column if not exists status text default 'Pending Dispatch ⏳';
 alter table public.fshub_orders add column if not exists geotag_lat_lon text;
 alter table public.fshub_orders add column if not exists created_at timestamptz default now();
 

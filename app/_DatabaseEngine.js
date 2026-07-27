@@ -665,13 +665,26 @@ export const DatabaseEngine = {
         ? amountRaw
         : (Number(String(amountRaw || '0').replace(/[^0-9.-]/g, '')) || 0);
 
+      const clientName = orderObj.store || orderObj.clientName || orderObj.store_name || orderObj.client_name || 'Client Store';
+      const grandTotalRaw = orderObj.grandTotal ?? orderObj.grand_total ?? orderObj.totalAmount ?? orderObj.total_amount ?? payableTotal;
+      const grandTotal = typeof grandTotalRaw === 'number'
+        ? grandTotalRaw
+        : (Number(String(grandTotalRaw || '0').replace(/[^0-9.-]/g, '')) || payableTotal || 0);
+      const geotag = orderObj.gpsVerified || orderObj.geotag_lat_lon || orderObj.geotag || orderObj.gps_coordinates || '';
+
       const payload = {
         invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
-        store_name: orderObj.store || orderObj.clientName || orderObj.store_name || 'Client Store',
+        store_name: clientName,
+        client_name: clientName,
         rep_id: orderObj.repId || orderObj.rep_id || 'UNKNOWN',
-        payable_total: payableTotal,
+        grand_total: grandTotal,
+        total_amount: payableTotal || grandTotal,
+        payable_total: payableTotal || grandTotal,
+        discount_amount: Number(orderObj.discountAmount ?? orderObj.discount_amount ?? 0) || 0,
         order_items: orderObj.cartItems || orderObj.items || orderObj.order_items || [],
-        geotag_lat_lon: orderObj.gpsVerified || orderObj.geotag_lat_lon || '',
+        status: orderObj.status || 'Pending Dispatch ⏳',
+        geotag_lat_lon: geotag,
+        geotag: geotag,
         created_at: orderObj.created_at || orderObj.localTimestamp || new Date().toISOString()
       };
 
