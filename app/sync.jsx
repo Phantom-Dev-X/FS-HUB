@@ -227,6 +227,12 @@ export default function SyncOrdersScreen() {
                 <Text style={styles.descriptionText}>{getItemSummary(item)}</Text>
                 <Text style={styles.timeTag}>🕒 {getOrderTime(item)}</Text>
                 <Text style={styles.statusText}>{item.syncStatus || 'PENDING_CLOUD_SYNC ⏳'}</Text>
+                {item.lastSyncError ? (
+                  <View style={styles.errorBox}>
+                    <Text style={styles.errorBoxTitle}>Last sync error</Text>
+                    <Text style={styles.errorBoxText}>{item.lastSyncError}</Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.actionsRow}>
                   <TouchableOpacity
@@ -425,6 +431,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     marginBottom: 16,
+  },
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorBoxTitle: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  errorBoxText: {
+    color: '#7F1D1D',
+    fontSize: 11,
+    lineHeight: 16,
   },
   actionsRow: {
     flexDirection: 'row',

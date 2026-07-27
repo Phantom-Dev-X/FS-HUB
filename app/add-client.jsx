@@ -1,6 +1,6 @@
 // ADD CLIENT - WHITE PREMIUM ELEGANT, ZERO FAKE, LINKED TO SUPABASE
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Modal } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, Modal, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,6 +53,16 @@ export default function AddClientScreen() {
     } finally {
       setIsLocating(false);
     }
+  };
+
+  const openSelectedLocationInGoogleMaps = async () => {
+    if (!location) {
+      Alert.alert('No Location Selected', 'Tap or drag the pin on the map first, or use current GPS.');
+      return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+    const supported = await Linking.canOpenURL(url);
+    if (supported) await Linking.openURL(url);
   };
 
   const takeStorefrontPhoto = async () => {
@@ -255,6 +265,9 @@ export default function AddClientScreen() {
             <TouchableOpacity style={styles.locationPrimary} onPress={captureCurrentLocation} disabled={isLocating}>
               {isLocating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.locationPrimaryText}>📍 Use My Current GPS Here</Text>}
             </TouchableOpacity>
+            <TouchableOpacity style={styles.googleMapsBtn} onPress={openSelectedLocationInGoogleMaps} disabled={!location}>
+              <Text style={[styles.googleMapsBtnText, !location && { opacity: 0.45 }]}>Open Selected Point in Google Maps</Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </Modal>
@@ -280,6 +293,8 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   locationPrimary: { backgroundColor: '#2563EB', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
   locationPrimaryText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
+  googleMapsBtn: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#2563EB', padding: 13, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  googleMapsBtnText: { color: '#2563EB', fontWeight: '900', fontSize: 12 },
   locationAlternative: { borderWidth: 1.5, borderColor: '#2563EB', padding: 13, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
   locationAlternativeText: { color: '#2563EB', fontWeight: '800', fontSize: 12 },
   locationResult: { backgroundColor: '#ECFDF5', borderColor: '#10B981', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 8 },

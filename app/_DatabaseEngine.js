@@ -631,8 +631,15 @@ export const DatabaseEngine = {
       const failedOrders = [];
       for (const order of pendingOrders) {
         const pushed = await this._pushOrderToSupabase(order);
-        if (pushed) successCount++;
-        else failedOrders.push(order);
+        if (pushed.success) {
+          successCount++;
+        } else {
+          failedOrders.push({
+            ...order,
+            lastSyncError: pushed.error || 'Unknown Supabase sync error',
+            lastSyncAttemptAt: new Date().toISOString(),
+          });
+        }
       }
       // Keep failed orders on the device so a partial network/database failure
       // can never silently destroy a salesperson's order.
@@ -644,7 +651,8 @@ export const DatabaseEngine = {
         failedCount,
         message: failedCount === 0
           ? `Synced ${successCount} order(s) successfully.`
-          : `Synced ${successCount}; ${failedCount} order(s) remain pending. Please retry.`
+          : `Synced ${successCount}; ${failedCount} order(s) remain pending. First error: ${failedOrders[0]?.lastSyncError || 'Unknown error'}`,
+        firstError: failedOrders[0]?.lastSyncError || null
       };
     } catch (e) { return { success: false, error: e.message }; }
   },
@@ -657,9 +665,6 @@ export const DatabaseEngine = {
         ? amountRaw
         : (Number(String(amountRaw || '0').replace(/[^0-9.-]/g, '')) || 0);
 
-      // Build the richest order payload first. If an older Supabase table is
-      // missing a column, we remove that exact column and retry instead of
-      // blocking the whole order from entering fshub_orders.
       const payload = {
         invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
         store_name: orderObj.store || orderObj.clientName || orderObj.store_name || 'Client Store',
@@ -677,7 +682,6 @@ export const DatabaseEngine = {
             'Content-Type': 'application/json',
             'apikey': this.supabaseConfig.anonKey,
             'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
-            // Upsert by invoice_number so retrying a synced/partially-synced order never creates a duplicate or blocks cleanup.
             'Prefer': 'resolution=merge-duplicates,return=minimal'
           },
           body: JSON.stringify(body)
@@ -687,14 +691,20 @@ export const DatabaseEngine = {
       };
 
       let body = { ...payload };
-      for (let attempt = 0; attempt < 4; attempt++) {
+      let lastResult = null;
+
+      // Retry after removing missing columns from older Supabase schemas.
+      for (let attempt = 0; attempt < 8; attempt++) {
         const result = await pushPayload(body);
+        lastResult = result;
+
         if (result.ok) {
           console.log(`[Order Push] Synced ${payload.invoice_number} ✅`);
-          return true;
+          return { success: true };
         }
 
         console.log(`[Order Push] Failed ${result.status}: ${result.text}`);
+
         const missingColumn = result.text?.match(/Could not find the '([^']+)' column/)?.[1];
         if (result.status === 400 && missingColumn && Object.prototype.hasOwnProperty.call(body, missingColumn)) {
           console.log(`[Order Push] Supabase table missing column "${missingColumn}"; retrying without it. Run SUPABASE_DATABASE_REPAIR.sql to fix schema permanently.`);
@@ -703,13 +713,20 @@ export const DatabaseEngine = {
           continue;
         }
 
-        return false;
+        const duplicateKey = result.text?.includes('duplicate key value') || result.status === 409;
+        if (duplicateKey) {
+          // If old row already exists, treat as synced so the offline queue can clear.
+          console.log(`[Order Push] Invoice ${payload.invoice_number} already exists in Supabase; clearing local duplicate ✅`);
+          return { success: true, warning: 'Invoice already exists in Supabase' };
+        }
+
+        return { success: false, error: `Supabase ${result.status}: ${result.text || 'Unknown error'}` };
       }
 
-      return false;
+      return { success: false, error: `Supabase ${lastResult?.status || 'error'}: ${lastResult?.text || 'Too many schema retry attempts'}` };
     } catch (e) {
       console.log('[Order Push] Network/error:', e.message);
-      return false;
+      return { success: false, error: `Network/error: ${e.message}` };
     }
   },
 
