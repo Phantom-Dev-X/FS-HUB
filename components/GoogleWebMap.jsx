@@ -22,11 +22,33 @@ export default function GoogleWebMap({ center = FALLBACK_CENTER, height = 220, z
   const [hasError, setHasError] = useState(false);
   const safeCenter = normalizeCoordinate(center);
 
-  const mapUrl = useMemo(() => {
+  const html = useMemo(() => {
     const lat = encodeURIComponent(String(safeCenter.latitude));
     const lon = encodeURIComponent(String(safeCenter.longitude));
     const q = encodeURIComponent(`${safeCenter.latitude},${safeCenter.longitude} (${label})`);
-    return `https://www.google.com/maps?q=${q}&ll=${lat},${lon}&z=${Number(zoom) || 14}&output=embed`;
+    const mapUrl = `https://maps.google.com/maps?q=${q}&ll=${lat},${lon}&z=${Number(zoom) || 14}&output=embed`;
+
+    // Google Maps embed URLs must be loaded inside an iframe. Loading the URL
+    // directly in WebView shows "must be embedded in an iframe" on some devices.
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; width:100%; overflow:hidden; background:#EFF6FF; }
+    iframe { border:0; height:100%; width:100%; display:block; }
+  </style>
+</head>
+<body>
+  <iframe
+    title="FS Hub Google Map"
+    src="${mapUrl}"
+    allowfullscreen
+    loading="eager"
+    referrerpolicy="no-referrer-when-downgrade">
+  </iframe>
+</body>
+</html>`;
   }, [safeCenter.latitude, safeCenter.longitude, zoom, label]);
 
   if (Platform.OS === 'web') {
@@ -50,11 +72,12 @@ export default function GoogleWebMap({ center = FALLBACK_CENTER, height = 220, z
     <View style={[styles.wrapper, { height }]}>
       <WebView
         originWhitelist={['*']}
-        source={{ uri: mapUrl }}
+        source={{ html, baseUrl: 'https://maps.google.com/' }}
         javaScriptEnabled
         domStorageEnabled
         geolocationEnabled
         mixedContentMode="always"
+        setSupportMultipleWindows={false}
         onError={() => setHasError(true)}
         onHttpError={() => setHasError(true)}
         style={styles.webview}
