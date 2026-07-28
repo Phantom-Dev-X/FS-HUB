@@ -161,7 +161,7 @@ export default function SignupScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.headerRow}>
-            <TouchableOpacity onPress={() => router.push('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
+            <TouchableOpacity onPress={() => router.replace('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
               <Ionicons name="arrow-back" size={16} color={colors.cyan} />
               <Text style={[styles.backText, { color: colors.cyan }]}> Back to Login</Text>
             </TouchableOpacity>
@@ -213,7 +213,7 @@ export default function SignupScreen() {
               {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.actionBtnText}>⚡ COMPLETE ONBOARDING ✓</Text>}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.push('/')} style={styles.loginLinkRow}>
+            <TouchableOpacity onPress={() => router.replace('/')} style={styles.loginLinkRow}>
               <Text style={[styles.loginLinkText, { color: colors.cyan }]}>Already registered? <Text style={{fontWeight: '900'}}>Log In</Text></Text>
             </TouchableOpacity>
           </View>

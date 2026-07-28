@@ -171,7 +171,7 @@ export default function VisitOrdersScreen() {
 
         {/* Top Bar & Back Button */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/checkin')} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.replace('/checkin')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Check-In Directory</Text>
           </TouchableOpacity>
 

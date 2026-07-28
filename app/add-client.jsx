@@ -162,7 +162,7 @@ export default function AddClientScreen() {
     Alert.alert(
       '🎉 Client Registered!',
       `${storeName} saved ${saveRes.success ? 'locally + cloud' : 'locally'}! ${emailResponse.success ? 'Welcome email sent to ' + storeEmail : 'Email failed: ' + emailResponse.message}`,
-      [{ text: 'Go to Check-In', onPress: () => router.push('/checkin') }]
+      [{ text: 'Go to Check-In', onPress: () => router.replace('/checkin') }]
     );
   };
 

@@ -195,7 +195,7 @@ export default function CheckoutSummaryScreen() {
         
         {/* Back Button & Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/visit')} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.replace('/visit')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Catalog</Text>
           </TouchableOpacity>
 

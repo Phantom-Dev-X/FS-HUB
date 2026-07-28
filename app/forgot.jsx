@@ -160,7 +160,7 @@ export default function ForgotPasswordScreen() {
 
         {/* Top Header Row */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.replace('/')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Login</Text>
           </TouchableOpacity>
 

@@ -67,7 +67,7 @@ export default function ProductDetailScreen() {
     Alert.alert(
       '🛒 Added to Store Cart ✓',
       `${qty} units of ${product.name} (₦${(qty * productPrice).toLocaleString()}) added to ${client.name}'s order!`,
-      [{ text: 'Continue Ordering', onPress: () => router.push('/visit') }]
+      [{ text: 'Continue Ordering', onPress: () => router.replace('/visit') }]
     );
   };
 
@@ -77,7 +77,7 @@ export default function ProductDetailScreen() {
         
         {/* Back Button & Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/visit')} style={[styles.backBtn, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.replace('/visit')} style={[styles.backBtn, { borderColor: colors.border }]}>
             <Text style={[styles.backText, { color: colors.cyan }]}>⬅️ Back to Store Catalog</Text>
           </TouchableOpacity>
 

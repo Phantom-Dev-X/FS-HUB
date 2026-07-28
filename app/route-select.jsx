@@ -67,7 +67,7 @@ export default function RouteSelectScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.push('/route')} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.replace('/route')} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={16} color="#2563EB" />
             <Text style={styles.backText}> Map</Text>
           </TouchableOpacity>
