@@ -4,19 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartFooter from './SmartFooter';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
-
-const HIDDEN_KEY = '@fshub_hidden_notification_threads';
 
 const getMessageId = (item) => String(item.id || item.related_id || item.relatedId || Math.random());
 
 export default function NotificationsScreen() {
   const [replies, setReplies] = useState([]);
   const [sentMessages, setSentMessages] = useState([]);
-  const [hiddenIds, setHiddenIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [repId, setRepId] = useState('');
   const [selectedThread, setSelectedThread] = useState(null);
@@ -33,15 +29,11 @@ export default function NotificationsScreen() {
       return;
     }
 
-    const [repReplies, repMessages, hiddenRaw] = await Promise.all([
+    const [repReplies, repMessages] = await Promise.all([
       DatabaseEngine.getRepNotifications(id),
       DatabaseEngine.getAdminMessagesByRep(id),
-      AsyncStorage.getItem(HIDDEN_KEY),
     ]);
 
-    let hidden = [];
-    try { hidden = hiddenRaw ? JSON.parse(hiddenRaw) : []; } catch {}
-    setHiddenIds(Array.isArray(hidden) ? hidden : []);
     setReplies(Array.isArray(repReplies) ? repReplies : []);
     setSentMessages(Array.isArray(repMessages) ? repMessages : []);
     setLoading(false);
@@ -70,11 +62,10 @@ export default function NotificationsScreen() {
     }));
 
     return [...sent, ...received]
-      .filter(item => !hiddenIds.includes(`${item.__kind}:${item.id}`) && !hiddenIds.includes(`thread:${item.__threadId}`))
       .sort((a, b) => new Date(b.__time || 0) - new Date(a.__time || 0));
-  }, [sentMessages, replies, hiddenIds]);
+  }, [sentMessages, replies]);
 
-  const unreadCount = replies.filter(n => !n.read && !hiddenIds.includes(`reply:${n.id}`)).length;
+  const unreadCount = replies.filter(n => !n.read).length;
 
   const openThread = async (item) => {
     if (item.__kind === 'reply' && !item.read) {
@@ -84,19 +75,42 @@ export default function NotificationsScreen() {
     setSelectedThread(item);
   };
 
-  const hideItem = async (item) => {
-    const key = `${item.__kind}:${item.id}`;
-    const next = [...new Set([...hiddenIds, key])];
-    setHiddenIds(next);
-    await AsyncStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
-    setSelectedThread(null);
+  const deleteItem = async (item) => {
+    const confirmTitle = item.__kind === 'sent' ? 'Delete Sent Message?' : 'Delete Reply?';
+    const confirmBody = item.__kind === 'sent'
+      ? 'This will delete the message/request from the database for both rep and admin.'
+      : 'This will delete this admin reply notification from the database.';
+    Alert.alert(confirmTitle, confirmBody, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const result = item.__kind === 'sent'
+            ? await DatabaseEngine.deleteMessageThread(item.__threadId)
+            : await DatabaseEngine.deleteRepNotification(item.id);
+          if (!result.success) return Alert.alert('Delete Failed', result.error || 'Could not delete from database.');
+          setSelectedThread(null);
+          await loadNotifications();
+        }
+      }
+    ]);
   };
 
-  const hideThread = async (threadId) => {
-    const next = [...new Set([...hiddenIds, `thread:${threadId}`])];
-    setHiddenIds(next);
-    await AsyncStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
-    setSelectedThread(null);
+  const deleteThread = async (threadId) => {
+    Alert.alert('Delete Full Thread?', 'This deletes the original message/request and all admin replies from the database for everybody.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete Thread',
+        style: 'destructive',
+        onPress: async () => {
+          const result = await DatabaseEngine.deleteMessageThread(threadId);
+          if (!result.success) return Alert.alert('Delete Failed', result.error || 'Could not delete thread from database.');
+          setSelectedThread(null);
+          await loadNotifications();
+        }
+      }
+    ]);
   };
 
   const selectedOriginal = selectedThread ? sentMessages.find(msg => String(msg.id) === String(selectedThread.__threadId)) : null;
@@ -174,8 +188,8 @@ export default function NotificationsScreen() {
             </ScrollView>
 
             <View style={styles.sheetActions}>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && hideItem(selectedThread)}><Text style={styles.deleteText}>Delete This</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && hideThread(selectedThread.__threadId)}><Text style={styles.deleteText}>Delete Thread</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteItem(selectedThread)}><Text style={styles.deleteText}>Delete This</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteThread(selectedThread.__threadId)}><Text style={styles.deleteText}>Delete Thread</Text></TouchableOpacity>
             </View>
           </View>
         </View>

@@ -720,6 +720,71 @@ export const DatabaseEngine = {
     }
   },
 
+  deleteRepNotification: async function(notificationId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?id=eq.${encodeURIComponent(notificationId)}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        }
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  deleteAdminMessage: async function(messageId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?id=eq.${encodeURIComponent(messageId)}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        }
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  deleteMessageThread: async function(threadId) {
+    try {
+      const encoded = encodeURIComponent(threadId);
+      const [adminRes, notificationRes] = await Promise.all([
+        fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?id=eq.${encoded}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': this.supabaseConfig.anonKey,
+            'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+            'Prefer': 'return=minimal'
+          }
+        }),
+        fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?or=(id.eq.${encoded},related_id.eq.${encoded})`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': this.supabaseConfig.anonKey,
+            'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+            'Prefer': 'return=minimal'
+          }
+        })
+      ]);
+      const adminText = await adminRes.text();
+      const notificationText = await notificationRes.text();
+      if (!adminRes.ok) return { success: false, error: `Admin message delete failed ${adminRes.status}: ${adminText}` };
+      if (!notificationRes.ok) return { success: false, error: `Notification delete failed ${notificationRes.status}: ${notificationText}` };
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // CATALOG
   getCatalog: async function() {
     try {
