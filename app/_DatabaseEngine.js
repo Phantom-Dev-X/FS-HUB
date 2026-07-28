@@ -583,6 +583,24 @@ export const DatabaseEngine = {
     }
   },
 
+  getAdminMessagesByRep: async function(repId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?select=*&rep_id=eq.${encodeURIComponent(repId)}&order=created_at.desc`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) {
+        console.log(`[Admin Messages By Rep] Fetch failed ${response.status}: ${await response.text()}`);
+        const pending = await this.getPendingAdminMessages();
+        return pending.filter(msg => msg.rep_id === repId || msg.repId === repId);
+      }
+      return await response.json();
+    } catch (e) {
+      console.log('[Admin Messages By Rep] Fetch error', e.message);
+      const pending = await this.getPendingAdminMessages();
+      return pending.filter(msg => msg.rep_id === repId || msg.repId === repId);
+    }
+  },
+
   updateAdminMessageStatus: async function(messageId, status) {
     try {
       const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?id=eq.${encodeURIComponent(messageId)}`, {

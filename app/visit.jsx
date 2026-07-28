@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
-  TextInput, Alert, Image, Platform
+  TextInput, Alert, Image, Platform, BackHandler
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -43,6 +43,14 @@ export default function VisitOrdersScreen() {
       };
     }, [])
   );
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.replace('/checkin');
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
 
   const colors = {
     background: isDark ? '#0F172A' : '#F4F6F9',
@@ -121,10 +129,21 @@ export default function VisitOrdersScreen() {
       } finally {
         setIsUploadingPhoto(false);
       }
+    } else {
+      Alert.alert('Geotag Photo Required', 'You cancelled the store photo. Capture a geotagged storefront photo before selecting products or checking out.');
     }
   };
 
+  const requireVerifiedPhoto = () => {
+    if (!OrderStore.currentClient?.checkInPhotoTaken) {
+      Alert.alert('Geotag Photo Required', 'Take and upload the store entrance photo first. You cannot select products or checkout until the check-in photo is verified.');
+      return false;
+    }
+    return true;
+  };
+
   const handleProductTap = (product) => {
+    if (!requireVerifiedPhoto()) return;
     router.push({ pathname: '/product-detail', params: { id: product.id } });
   };
 
@@ -203,6 +222,13 @@ export default function VisitOrdersScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {!OrderStore.currentClient?.checkInPhotoTaken && (
+          <View style={styles.photoRequiredBanner}>
+            <Text style={styles.photoRequiredTitle}>Photo check-in required</Text>
+            <Text style={styles.photoRequiredText}>Capture and upload the geotagged store photo to unlock product selection and checkout.</Text>
+          </View>
+        )}
 
         {/* Search Bar */}
         <View style={[styles.searchWrapper, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -304,6 +330,7 @@ export default function VisitOrdersScreen() {
         <TouchableOpacity
           style={styles.checkoutBtn}
           onPress={() => {
+            if (!requireVerifiedPhoto()) return;
             if (totalUnits === 0) {
               Alert.alert('Empty Cart ⚠️', 'Tap any product from the catalog list to add items to your cart first!');
               return;
@@ -431,6 +458,25 @@ const styles = StyleSheet.create({
     color: '#A7F3D0',
     fontSize: 11,
     fontWeight: 'bold',
+  },
+  photoRequiredBanner: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  photoRequiredTitle: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  photoRequiredText: {
+    color: '#78350F',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
   },
   photoTitle: {
     fontSize: 14,
