@@ -10,6 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
 import * as ImagePicker from 'expo-image-picker';
+import RemoteImage from '../components/RemoteImage';
 
 export default function InventoryScreen() {
   const { colors } = useTheme(); // Global white elegant theme sync
@@ -180,6 +181,9 @@ export default function InventoryScreen() {
             {filteredProducts.map((item) => (
               <View key={item.id} style={styles.productCard}>
                 <View style={styles.cardTop}>
+                  <RemoteImage path={item.image_path || item.product_photo_path} style={styles.productThumb}>
+                    <Ionicons name="cube-outline" size={20} color="#2563EB" />
+                  </RemoteImage>
                   <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
                   <View style={[styles.statusBadge, { borderColor: item.stock === 0 ? '#EF4444' : item.stock < 10 ? '#F59E0B' : '#10B981' }]}>
                     <Text style={[styles.statusText, { color: item.stock === 0 ? '#EF4444' : item.stock < 10 ? '#F59E0B' : '#10B981' }]}>{item.stock === 0 ? 'Out of Stock' : item.stock < 10 ? 'Low Stock' : 'In Stock'}</Text>
@@ -246,7 +250,9 @@ function ProductSpecsModal({ product, onClose }) {
             <TouchableOpacity style={styles.sheetClose} onPress={onClose}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity>
           </View>
           <View style={styles.specHero}>
-            <Ionicons name="cube-outline" size={36} color="#2563EB" />
+            <RemoteImage path={product.image_path || product.product_photo_path} style={styles.specImage}>
+              <Ionicons name="cube-outline" size={36} color="#2563EB" />
+            </RemoteImage>
             <Text style={styles.specName}>{product.name}</Text>
             <Text style={styles.specCategory}>{product.category || 'Uncategorized'}</Text>
           </View>
@@ -331,6 +337,7 @@ const styles = StyleSheet.create({
   list: { gap: 12 },
   productCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  productThumb: { width: 42, height: 42, borderRadius: 12, marginRight: 10 },
   productName: { fontSize: 14, fontWeight: '800', color: '#0F172A', flex: 1, marginRight: 8 },
   statusBadge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   statusText: { fontSize: 10, fontWeight: '800' },
@@ -350,6 +357,7 @@ const styles = StyleSheet.create({
   sheetTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
   sheetClose: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
   specHero: { alignItems: 'center', backgroundColor: '#EFF6FF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#DBEAFE', marginBottom: 12 },
+  specImage: { width: 112, height: 112, borderRadius: 22, marginBottom: 8 },
   specName: { color: '#0F172A', fontSize: 17, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   specCategory: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: 3 },
   specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

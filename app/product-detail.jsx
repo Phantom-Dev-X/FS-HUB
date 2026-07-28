@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import { useTheme } from '../context/ThemeContext';
 import { OrderStore } from './_OrderStore'; // Or './OrderStore'
+import RemoteImage from '../components/RemoteImage';
 
 // =========================================================================
 // SCREEN 2 OF 3: PRODUCT DETAIL & ADD TO CART (`app/product-detail.jsx`)
@@ -90,7 +91,9 @@ export default function ProductDetailScreen() {
           <View style={styles.heroTag}>
             <Text style={styles.heroTagText}>IN STOCK: {productStock} UNITS 🟢</Text>
           </View>
-          <Text style={{ fontSize: 64, marginVertical: 10 }}>⚡</Text>
+          <RemoteImage path={product.image_path || product.product_photo_path} style={styles.heroProductImage}>
+            <Text style={{ fontSize: 64 }}>⚡</Text>
+          </RemoteImage>
           <Text style={[styles.heroProdName, { color: colors.mainText }]} numberOfLines={1}>{product.name}</Text>
           <Text style={[styles.heroBarcode, { color: colors.cyan }]}>Barcode #{product.barcode} • Ikeja Warehouse Depot</Text>
         </View>
@@ -227,6 +230,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '900',
+  },
+  heroProductImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 28,
+    marginVertical: 10,
   },
   heroProdName: {
     fontSize: 16,

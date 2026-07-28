@@ -39,9 +39,13 @@ CREATE TABLE IF NOT EXISTS fshub_catalog (
   unit_price NUMERIC NOT NULL,
   warehouse_stock INTEGER NOT NULL DEFAULT 0,
   barcode TEXT,
+  image_path TEXT,
+  product_photo_path TEXT,
   status TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
+ALTER TABLE fshub_catalog ADD COLUMN IF NOT EXISTS image_path TEXT;
+ALTER TABLE fshub_catalog ADD COLUMN IF NOT EXISTS product_photo_path TEXT;
 
 -- 4. ORDERS TABLE
 CREATE TABLE IF NOT EXISTS fshub_orders (

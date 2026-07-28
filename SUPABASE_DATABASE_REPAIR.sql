@@ -132,6 +132,8 @@ create table if not exists public.fshub_catalog (
 alter table public.fshub_catalog add column if not exists unit_price numeric not null default 0;
 alter table public.fshub_catalog add column if not exists warehouse_stock integer not null default 0;
 alter table public.fshub_catalog add column if not exists barcode text;
+alter table public.fshub_catalog add column if not exists image_path text;
+alter table public.fshub_catalog add column if not exists product_photo_path text;
 alter table public.fshub_catalog add column if not exists status text;
 alter table public.fshub_catalog add column if not exists created_at timestamptz default now();
 

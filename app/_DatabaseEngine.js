@@ -282,6 +282,50 @@ export const DatabaseEngine = {
     }
   },
 
+  getSignedImageUrl: async function(storagePath, expiresIn = 604800) {
+    try {
+      if (!storagePath) return { success: false, error: 'Missing storage path' };
+      if (String(storagePath).startsWith('http') || String(storagePath).startsWith('file:') || String(storagePath).startsWith('content:')) {
+        return { success: true, url: storagePath };
+      }
+      const response = await fetch(`https://evcbqsgznbrzojjbtnfd.supabase.co/storage/v1/object/sign/fshub-media/${storagePath}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`
+        },
+        body: JSON.stringify({ expiresIn })
+      });
+      const text = await response.text();
+      if (!response.ok) return { success: false, error: `Sign URL error ${response.status}: ${text}` };
+      const data = JSON.parse(text);
+      const signedURL = data.signedURL || data.signedUrl || data.url;
+      return signedURL ? { success: true, url: `https://evcbqsgznbrzojjbtnfd.supabase.co/storage/v1${signedURL}` } : { success: false, error: 'No signed URL returned' };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  updateRepAvatar: async function(repId, avatarPath) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.repsTable}?id=eq.${encodeURIComponent(repId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ avatar: avatarPath })
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Avatar update failed ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
   saveCheckin: async function(checkin) {
     try {
       const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_checkins`, {
@@ -668,7 +712,9 @@ export const DatabaseEngine = {
       return products.map(product => ({
         ...product,
         price: Number(product.unit_price ?? product.price ?? 0),
-        stock: Number(product.warehouse_stock ?? product.stock ?? 0)
+        stock: Number(product.warehouse_stock ?? product.stock ?? 0),
+        image_path: product.image_path || product.product_photo_path || product.photo_path || product.image || null,
+        product_photo_path: product.product_photo_path || product.image_path || product.photo_path || product.image || null
       }));
     } catch { return []; }
   },
@@ -690,6 +736,8 @@ export const DatabaseEngine = {
           unit_price: Number(productObject.unit_price ?? productObject.price ?? 0),
           warehouse_stock: Number(productObject.warehouse_stock ?? productObject.stock ?? 0),
           barcode: productObject.barcode || null,
+          image_path: productObject.image_path || productObject.product_photo_path || null,
+          product_photo_path: productObject.product_photo_path || productObject.image_path || null,
           status: productObject.status || 'In Stock',
           created_at: productObject.created_at || new Date().toISOString()
         })
@@ -712,6 +760,8 @@ export const DatabaseEngine = {
       if (updates.price !== undefined) payload.unit_price = Number(updates.price);
       if (updates.stock !== undefined) payload.warehouse_stock = Number(updates.stock);
       if (updates.barcode !== undefined) payload.barcode = updates.barcode;
+      if (updates.image_path !== undefined) payload.image_path = updates.image_path;
+      if (updates.product_photo_path !== undefined) payload.product_photo_path = updates.product_photo_path;
       if (updates.status !== undefined) payload.status = updates.status;
 
       const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.catalogTable}?id=eq.${encodedId}`, {

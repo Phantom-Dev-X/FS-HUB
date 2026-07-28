@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -22,6 +21,7 @@ import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { EmailService } from './_EmailService';
+import RemoteImage from '../components/RemoteImage';
 import { useTheme } from '../context/ThemeContext';
 
 const PREF_KEY = '@fshub_profile_preferences';
@@ -126,10 +126,26 @@ export default function ProfileScreen() {
         result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
       }
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setAvatarUri(result.assets[0].uri);
-        OrderStore.currentAgent.avatar = result.assets[0].uri;
-        Alert.alert('Photo Updated', 'Profile photo updated on this device. Cloud upload can be added later.');
+        const localUri = result.assets[0].uri;
+        setAvatarUri(localUri);
+        OrderStore.currentAgent.avatar = localUri;
         setModal(null);
+
+        const repId = agent?.id || OrderStore.currentAgent?.id;
+        if (repId && repId !== 'REP-GUEST') {
+          const upload = await DatabaseEngine.uploadImage(localUri, `avatars/${repId}/profile.jpg`);
+          if (upload.success) {
+            await DatabaseEngine.updateRepAvatar(repId, upload.path);
+            OrderStore.currentAgent.avatar = upload.path;
+            const session = await DatabaseEngine.getSession();
+            if (session) await DatabaseEngine.saveSession({ ...session, avatar: upload.path });
+            Alert.alert('Photo Synced ✅', 'Profile photo saved locally and synced to Supabase.');
+          } else {
+            Alert.alert('Photo Saved Locally', `Photo updated on this phone, but cloud sync failed: ${upload.error}`);
+          }
+        } else {
+          Alert.alert('Photo Updated', 'Profile photo updated on this device.');
+        }
       }
     } catch (e) {
       Alert.alert('Photo Error', e.message);
@@ -222,8 +238,11 @@ export default function ProfileScreen() {
   };
 
   const renderAvatar = () => {
-    if (avatarUri) return <Image source={{ uri: avatarUri }} style={styles.avatarImage} />;
-    return <View style={styles.avatarCircle}><Text style={styles.avatarText}>{agent?.initials || 'FO'}</Text></View>;
+    return (
+      <RemoteImage path={avatarUri} style={styles.avatarImage}>
+        <View style={styles.avatarCircle}><Text style={styles.avatarText}>{agent?.initials || 'FO'}</Text></View>
+      </RemoteImage>
+    );
   };
 
   const closeModal = () => setModal(null);

@@ -45,6 +45,8 @@ ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Pending D
 ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS geotag_lat_lon TEXT;
 ALTER TABLE fshub_orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE fshub_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE fshub_catalog ADD COLUMN IF NOT EXISTS image_path TEXT;
+ALTER TABLE fshub_catalog ADD COLUMN IF NOT EXISTS product_photo_path TEXT;
 ALTER TABLE fshub_catalog DISABLE ROW LEVEL SECURITY;
 
 -- 5. Admin password bootstrap (fixes Primary Admin seeded without password)

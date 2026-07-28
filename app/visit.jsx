@@ -12,6 +12,7 @@ import * as Location from 'expo-location';
 
 // Look right here: We import `expo-image-picker` to ask for camera permissions and take REAL photos!
 import * as ImagePicker from 'expo-image-picker';
+import RemoteImage from '../components/RemoteImage';
 
 export default function VisitOrdersScreen() {
   const { isDark, toggleTheme } = useTheme();
@@ -261,6 +262,9 @@ export default function VisitOrdersScreen() {
                 onPress={() => handleProductTap(item)}
               >
                 <View style={styles.prodTopRow}>
+                  <RemoteImage path={item.image_path || item.product_photo_path} style={styles.prodThumb}>
+                    <Text style={{ fontSize: 22 }}>⚡</Text>
+                  </RemoteImage>
                   <View style={styles.prodTextWrapper}>
                     <Text style={[styles.prodName, { color: colors.mainText }]} numberOfLines={1}>{item.name}</Text>
                     <Text style={[styles.prodMeta, { color: colors.subText }]}>
@@ -505,6 +509,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  prodThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    marginRight: 12,
   },
   prodTextWrapper: {
     flex: 1,
