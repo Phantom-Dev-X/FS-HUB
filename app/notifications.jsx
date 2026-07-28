@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,20 +8,25 @@ import SmartFooter from './SmartFooter';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
 
-const getMessageId = (item) => String(item.id || item.related_id || item.relatedId || Math.random());
+const threadIdOfMessage = (msg) => String(msg.related_id || msg.relatedId || msg.id);
+const threadIdOfReply = (reply) => String(reply.related_id || reply.relatedId || reply.id);
 
 export default function NotificationsScreen() {
   const [replies, setReplies] = useState([]);
   const [sentMessages, setSentMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [repId, setRepId] = useState('');
+  const [repName, setRepName] = useState('Field Officer');
   const [selectedThread, setSelectedThread] = useState(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
     const session = await DatabaseEngine.getSession();
     const id = session?.id || OrderStore.currentAgent?.id;
     setRepId(id || '');
+    setRepName(session?.name || OrderStore.currentAgent?.name || 'Field Officer');
     if (!id || id === 'REP-GUEST') {
       setReplies([]);
       setSentMessages([]);
@@ -41,64 +46,73 @@ export default function NotificationsScreen() {
 
   useFocusEffect(useCallback(() => { loadNotifications(); }, [loadNotifications]));
 
-  const inboxItems = useMemo(() => {
-    const sent = sentMessages.map(msg => ({
-      ...msg,
-      __kind: 'sent',
-      __threadId: getMessageId(msg),
-      __title: msg.title,
-      __body: msg.body,
-      __time: msg.created_at,
-      __unread: false,
-    }));
-    const received = replies.map(reply => ({
-      ...reply,
-      __kind: 'reply',
-      __threadId: String(reply.related_id || reply.relatedId || reply.id),
-      __title: reply.title,
-      __body: reply.body,
-      __time: reply.created_at,
-      __unread: !reply.read,
-    }));
+  const threads = useMemo(() => {
+    const map = new Map();
 
-    return [...sent, ...received]
-      .sort((a, b) => new Date(b.__time || 0) - new Date(a.__time || 0));
+    sentMessages.forEach(msg => {
+      const threadId = threadIdOfMessage(msg);
+      const current = map.get(threadId) || { threadId, sent: [], replies: [] };
+      current.sent.push(msg);
+      current.original = current.original || sentMessages.find(m => String(m.id) === threadId) || msg;
+      map.set(threadId, current);
+    });
+
+    replies.forEach(reply => {
+      const threadId = threadIdOfReply(reply);
+      const current = map.get(threadId) || { threadId, sent: [], replies: [] };
+      current.replies.push(reply);
+      map.set(threadId, current);
+    });
+
+    return Array.from(map.values()).map(thread => {
+      const events = [
+        ...thread.sent.map(item => ({ ...item, kind: 'sent', time: item.created_at })),
+        ...thread.replies.map(item => ({ ...item, kind: 'reply', time: item.created_at })),
+      ].sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+      const latest = events[events.length - 1] || thread.original;
+      const unread = thread.replies.some(reply => !reply.read);
+      return { ...thread, events, latest, unread, title: thread.original?.title || latest?.title || 'Message Thread' };
+    }).sort((a, b) => new Date(b.latest?.time || b.latest?.created_at || 0) - new Date(a.latest?.time || a.latest?.created_at || 0));
   }, [sentMessages, replies]);
 
-  const unreadCount = replies.filter(n => !n.read).length;
+  const unreadCount = threads.filter(thread => thread.unread).length;
 
-  const openThread = async (item) => {
-    if (item.__kind === 'reply' && !item.read) {
-      await DatabaseEngine.markRepNotificationRead(item.id);
-      setReplies(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+  const openThread = async (thread) => {
+    const unreadReplies = thread.replies.filter(reply => !reply.read);
+    if (unreadReplies.length) {
+      await Promise.all(unreadReplies.map(reply => DatabaseEngine.markRepNotificationRead(reply.id)));
+      setReplies(prev => prev.map(reply => thread.threadId === threadIdOfReply(reply) ? { ...reply, read: true } : reply));
     }
-    setSelectedThread(item);
+    setSelectedThread(thread);
+    setReplyBody('');
   };
 
-  const deleteItem = async (item) => {
-    const confirmTitle = item.__kind === 'sent' ? 'Delete Sent Message?' : 'Delete Reply?';
-    const confirmBody = item.__kind === 'sent'
-      ? 'This will delete the message/request from the database for both rep and admin.'
-      : 'This will delete this admin reply notification from the database.';
-    Alert.alert(confirmTitle, confirmBody, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const result = item.__kind === 'sent'
-            ? await DatabaseEngine.deleteMessageThread(item.__threadId)
-            : await DatabaseEngine.deleteRepNotification(item.id);
-          if (!result.success) return Alert.alert('Delete Failed', result.error || 'Could not delete from database.');
-          setSelectedThread(null);
-          await loadNotifications();
-        }
-      }
-    ]);
+  const sendReplyToAdmin = async () => {
+    if (!selectedThread || !replyBody.trim()) return;
+    setSendingReply(true);
+    const original = selectedThread.original || selectedThread.sent[0] || {};
+    const res = await DatabaseEngine.saveAdminMessage({
+      repId,
+      repName,
+      type: 'rep_followup',
+      title: `Re: ${original.title || selectedThread.title}`,
+      body: replyBody.trim(),
+      priority: original.priority || 'Normal',
+      relatedId: selectedThread.threadId,
+      payload: { source: 'rep_notification_thread_reply' }
+    });
+    setSendingReply(false);
+    if (!res.success) return Alert.alert('Reply Failed', res.error || 'Could not send reply.');
+    setReplyBody('');
+    await loadNotifications();
+    // reopen same thread with fresh messages
+    setTimeout(() => {
+      setSelectedThread(prev => prev ? { ...prev, sent: [...prev.sent, res.message], events: [...prev.events, { ...res.message, kind: 'sent', time: res.message.created_at }] } : prev);
+    }, 50);
   };
 
   const deleteThread = async (threadId) => {
-    Alert.alert('Delete Full Thread?', 'This deletes the original message/request and all admin replies from the database for everybody.', [
+    Alert.alert('Delete Thread?', 'This deletes the full conversation from the database for rep and admin.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete Thread',
@@ -113,9 +127,6 @@ export default function NotificationsScreen() {
     ]);
   };
 
-  const selectedOriginal = selectedThread ? sentMessages.find(msg => String(msg.id) === String(selectedThread.__threadId)) : null;
-  const selectedReplies = selectedThread ? replies.filter(reply => String(reply.related_id || reply.relatedId || reply.id) === String(selectedThread.__threadId)) : [];
-
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
@@ -125,28 +136,28 @@ export default function NotificationsScreen() {
             <Ionicons name="home-outline" size={16} color="#2563EB" />
             <Text style={styles.backText}> Home</Text>
           </TouchableOpacity>
-          <View style={styles.badge}><Text style={styles.badgeText}>{unreadCount} Unread</Text></View>
+          <View style={styles.badge}><Text style={styles.badgeText}>{unreadCount} New</Text></View>
         </View>
 
         <Text style={styles.title}>🔔 Notifications</Text>
-        <Text style={styles.sub}>Your messages to admin and replies from HQ for {repId || 'your account'}.</Text>
+        <Text style={styles.sub}>One conversation per admin message/request, like an inbox thread.</Text>
 
         {loading ? (
           <View style={styles.emptyBox}><ActivityIndicator color="#2563EB" /><Text style={styles.emptySub}>Loading notifications...</Text></View>
-        ) : inboxItems.length === 0 ? (
+        ) : threads.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={{ fontSize: 44 }}>🔕</Text>
             <Text style={styles.emptyTitle}>No Messages Yet</Text>
-            <Text style={styles.emptySub}>Your admin messages, restock requests, and replies will appear here like an inbox.</Text>
+            <Text style={styles.emptySub}>Your admin messages, restock requests, and replies will appear here.</Text>
           </View>
-        ) : inboxItems.map(item => (
-          <TouchableOpacity key={`${item.__kind}-${item.id}`} style={[styles.card, item.__unread && styles.unreadCard]} onPress={() => openThread(item)}>
+        ) : threads.map(thread => (
+          <TouchableOpacity key={thread.threadId} style={[styles.card, thread.unread && styles.unreadCard]} onPress={() => openThread(thread)}>
             <View style={styles.cardTop}>
-              <Text style={styles.cardTitle} numberOfLines={1}>{item.__title}</Text>
-              {item.__unread ? <View style={styles.dot} /> : <Text style={styles.kindPill}>{item.__kind === 'sent' ? 'Sent' : 'Reply'}</Text>}
+              <Text style={styles.cardTitle} numberOfLines={1}>{thread.title}</Text>
+              {thread.unread ? <View style={styles.dot} /> : <Text style={styles.kindPill}>{thread.events.length} msgs</Text>}
             </View>
-            <Text style={styles.cardBody} numberOfLines={2}>{item.__body}</Text>
-            <Text style={styles.cardMeta}>{item.__kind === 'sent' ? 'Message to Admin' : 'Admin Reply'} • {item.__time ? new Date(item.__time).toLocaleString() : 'Now'}</Text>
+            <Text style={styles.cardBody} numberOfLines={2}>{thread.latest?.body || 'No message body'}</Text>
+            <Text style={styles.cardMeta}>{thread.latest?.kind === 'reply' ? 'Admin replied' : 'You sent'} • {thread.latest?.time ? new Date(thread.latest.time).toLocaleString() : 'Now'}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -157,39 +168,33 @@ export default function NotificationsScreen() {
           <View style={styles.sheet}>
             <View style={styles.handle} />
             <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>Message Thread</Text>
+              <Text style={styles.sheetTitle} numberOfLines={1}>{selectedThread?.title || 'Message Thread'}</Text>
               <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedThread(null)}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              {selectedOriginal ? (
-                <View style={styles.threadSent}>
-                  <Text style={styles.threadLabel}>You sent</Text>
-                  <Text style={styles.threadTitle}>{selectedOriginal.title}</Text>
-                  <Text style={styles.threadBody}>{selectedOriginal.body}</Text>
-                  <Text style={styles.threadMeta}>{selectedOriginal.created_at ? new Date(selectedOriginal.created_at).toLocaleString() : ''}</Text>
-                </View>
-              ) : selectedThread ? (
-                <View style={selectedThread.__kind === 'sent' ? styles.threadSent : styles.threadReply}>
-                  <Text style={styles.threadLabel}>{selectedThread.__kind === 'sent' ? 'You sent' : 'Admin replied'}</Text>
-                  <Text style={styles.threadTitle}>{selectedThread.__title}</Text>
-                  <Text style={styles.threadBody}>{selectedThread.__body}</Text>
-                </View>
-              ) : null}
-
-              {selectedReplies.map(reply => (
-                <View key={reply.id} style={styles.threadReply}>
-                  <Text style={styles.threadLabel}>Admin replied</Text>
-                  <Text style={styles.threadTitle}>{reply.title}</Text>
-                  <Text style={styles.threadBody}>{reply.body}</Text>
-                  <Text style={styles.threadMeta}>{reply.created_at ? new Date(reply.created_at).toLocaleString() : ''}</Text>
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {selectedThread?.events.map((event, index) => (
+                <View key={`${event.kind}-${event.id || index}`} style={event.kind === 'sent' ? styles.bubbleSent : styles.bubbleReply}>
+                  <Text style={styles.threadLabel}>{event.kind === 'sent' ? 'You' : 'Admin'}</Text>
+                  <Text style={styles.threadBody}>{event.body}</Text>
+                  <Text style={styles.threadMeta}>{event.time ? new Date(event.time).toLocaleString() : ''}</Text>
                 </View>
               ))}
             </ScrollView>
 
+            <TextInput
+              style={styles.replyInput}
+              value={replyBody}
+              onChangeText={setReplyBody}
+              placeholder="Reply to admin..."
+              multiline
+              textAlignVertical="top"
+            />
             <View style={styles.sheetActions}>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteItem(selectedThread)}><Text style={styles.deleteText}>Delete This</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteThread(selectedThread.__threadId)}><Text style={styles.deleteText}>Delete Thread</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.sendBtn} onPress={sendReplyToAdmin} disabled={sendingReply || !replyBody.trim()}>
+                {sendingReply ? <ActivityIndicator color="#FFF" /> : <Text style={styles.sendText}>Send Reply</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteThread(selectedThread.threadId)}><Text style={styles.deleteText}>Delete Thread</Text></TouchableOpacity>
             </View>
           </View>
         </View>
@@ -221,18 +226,20 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#1E3A8A', fontSize: 16, fontWeight: '900', marginTop: 8 },
   emptySub: { color: '#64748B', textAlign: 'center', fontSize: 12, lineHeight: 18, marginTop: 6 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18, maxHeight: '82%' },
+  sheet: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18, maxHeight: '86%' },
   handle: { width: 44, height: 5, borderRadius: 999, backgroundColor: '#CBD5E1', alignSelf: 'center', marginBottom: 14 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sheetTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+  sheetTitle: { flex: 1, color: '#0F172A', fontSize: 18, fontWeight: '900', marginRight: 10 },
   closeBtn: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  threadSent: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 16, padding: 14, marginBottom: 10 },
-  threadReply: { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16, padding: 14, marginBottom: 10 },
+  bubbleSent: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 16, padding: 12, marginBottom: 10 },
+  bubbleReply: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16, padding: 12, marginBottom: 10 },
   threadLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginBottom: 4 },
-  threadTitle: { color: '#0F172A', fontSize: 14, fontWeight: '900' },
-  threadBody: { color: '#334155', fontSize: 12, lineHeight: 18, marginTop: 6 },
-  threadMeta: { color: '#64748B', fontSize: 10, marginTop: 8 },
+  threadBody: { color: '#334155', fontSize: 12, lineHeight: 18 },
+  threadMeta: { color: '#64748B', fontSize: 9, marginTop: 6 },
+  replyInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 12, minHeight: 70, marginTop: 8 },
   sheetActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  sendBtn: { flex: 1, backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  sendText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12 },
   deleteBtn: { flex: 1, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   deleteText: { color: '#DC2626', fontWeight: '900', fontSize: 12 },
 });
