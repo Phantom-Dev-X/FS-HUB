@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
@@ -45,6 +46,10 @@ export default function ProfileScreen() {
   const [failedEmails, setFailedEmails] = useState([]);
   const [retryingEmailId, setRetryingEmailId] = useState(null);
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
 
   const loadProfileData = useCallback(async () => {
     const session = await DatabaseEngine.getSession();
@@ -143,6 +148,47 @@ export default function ProfileScreen() {
     Alert.alert(result.success ? 'Email Sent' : 'Retry Failed', result.message || 'Done');
   };
 
+  const checkForAppUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateMessage('Checking for updates...');
+    setUpdateAvailable(false);
+    try {
+      if (!Updates.isEnabled) {
+        setUpdateMessage('Updates are not enabled in this build. Install the latest APK build first.');
+        Alert.alert('Updates Not Enabled', 'This build cannot use OTA updates. Install the latest APK build first.');
+        return;
+      }
+      const result = await Updates.checkForUpdateAsync();
+      if (result.isAvailable) {
+        setUpdateAvailable(true);
+        setUpdateMessage('Update found. Tap Install Update Now to apply it.');
+      } else {
+        setUpdateMessage('You are already on the latest available update.');
+        Alert.alert('No Update Found', 'This app is already on the latest update for this runtime/channel.');
+      }
+    } catch (e) {
+      setUpdateMessage(e.message || 'Could not check for update.');
+      Alert.alert('Update Check Failed', e.message || 'Could not check for update.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const installAppUpdate = async () => {
+    setInstallingUpdate(true);
+    setUpdateMessage('Downloading update...');
+    try {
+      await Updates.fetchUpdateAsync();
+      setUpdateMessage('Update downloaded. Restarting app...');
+      await Updates.reloadAsync();
+    } catch (e) {
+      setUpdateMessage(e.message || 'Could not install update.');
+      Alert.alert('Update Install Failed', e.message || 'Could not install update.');
+    } finally {
+      setInstallingUpdate(false);
+    }
+  };
+
   const renderAvatar = () => {
     if (avatarUri) return <Image source={{ uri: avatarUri }} style={styles.avatarImage} />;
     return <View style={styles.avatarCircle}><Text style={styles.avatarText}>{agent?.initials || 'FO'}</Text></View>;
@@ -213,7 +259,7 @@ export default function ProfileScreen() {
       <ProfileModal visible={Boolean(modal)} title={getModalTitle(modal)} onClose={closeModal}>
         {modal === 'photo' && <PhotoSheet onCamera={() => pickAvatar('camera')} onGallery={() => pickAvatar('gallery')} onRemove={() => { setAvatarUri(null); OrderStore.currentAgent.avatar = null; closeModal(); }} />}
         {modal === 'security' && <SecuritySheet agent={agent} onLogout={handleLogout} />}
-        {modal === 'sync' && <SyncSheet stats={stats} syncing={syncing} onSync={handleSyncNow} />}
+        {modal === 'sync' && <SyncSheet stats={stats} syncing={syncing} onSync={handleSyncNow} checkingUpdate={checkingUpdate} updateAvailable={updateAvailable} installingUpdate={installingUpdate} updateMessage={updateMessage} onCheckUpdate={checkForAppUpdate} onInstallUpdate={installAppUpdate} />}
         {modal === 'appearance' && <AppearanceSheet isDark={isDark} toggleTheme={toggleTheme} prefs={prefs} updatePref={updatePref} />}
         {modal === 'route' && <RoutePrefsSheet prefs={prefs} updatePref={updatePref} />}
         {modal === 'receipts' && <ReceiptsSheet prefs={prefs} updatePref={updatePref} failedEmails={failedEmails} retryingEmailId={retryingEmailId} onRetry={retryEmail} />}
@@ -259,8 +305,8 @@ function SecuritySheet({ agent, onLogout }) {
   return <><InfoRow title="Email" sub={agent?.email || 'Not set'} /><InfoRow title="Rep ID" sub={agent?.id || 'REP-GUEST'} /><Option icon="key-outline" title="Reset Password" sub="Open password reset email/OTP flow" onPress={() => router.push('/forgot')} /><Option icon="log-out-outline" title="Sign Out" sub="Clear this device session" danger onPress={onLogout} /></>;
 }
 
-function SyncSheet({ stats, syncing, onSync }) {
-  return <><View style={styles.syncGrid}><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline}</Text><Text style={styles.syncLabel}>offline pending</Text></View><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline === 0 ? '100%' : 'Check'}</Text><Text style={styles.syncLabel}>cloud health</Text></View></View><Option icon="sync-outline" title="Sync Now" sub="Upload pending orders to Supabase" loading={syncing} onPress={onSync} /><Option icon="list-outline" title="View Offline Queue" sub="Open detailed sync screen" onPress={() => router.push('/sync')} /></>;
+function SyncSheet({ stats, syncing, onSync, checkingUpdate, updateAvailable, installingUpdate, updateMessage, onCheckUpdate, onInstallUpdate }) {
+  return <><View style={styles.syncGrid}><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline}</Text><Text style={styles.syncLabel}>offline pending</Text></View><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline === 0 ? '100%' : 'Check'}</Text><Text style={styles.syncLabel}>cloud health</Text></View></View><Option icon="sync-outline" title="Sync Orders Now" sub="Upload pending orders to Supabase" loading={syncing} onPress={onSync} /><Option icon="list-outline" title="View Offline Queue" sub="Open detailed sync screen" onPress={() => router.push('/sync')} /><View style={styles.updatePanel}><Text style={styles.updateTitle}>App Updates</Text><Text style={styles.updateSub}>{updateMessage || 'Manually check for OTA updates if you tapped Later before.'}</Text><Option icon="cloud-download-outline" title="Check for Updates" sub="Look for a new FS Hub update on the production channel" loading={checkingUpdate} onPress={onCheckUpdate} />{updateAvailable ? <Option icon="rocket-outline" title="Install Update Now" sub="Download update and restart the app immediately" loading={installingUpdate} onPress={onInstallUpdate} /> : null}</View></>;
 }
 
 function AppearanceSheet({ isDark, toggleTheme, prefs, updatePref }) {
@@ -341,6 +387,9 @@ const styles = StyleSheet.create({
   syncBox: { flex: 1, backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 18, padding: 14 },
   syncNum: { color: '#1E3A8A', fontSize: 24, fontWeight: '900' },
   syncLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginTop: 2 },
+  updatePanel: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 16, padding: 12, marginTop: 12 },
+  updateTitle: { color: '#1E3A8A', fontSize: 13, fontWeight: '900', marginBottom: 4 },
+  updateSub: { color: '#64748B', fontSize: 11, lineHeight: 16, marginBottom: 10 },
   failedTitle: { color: '#0F172A', fontSize: 13, fontWeight: '900', marginTop: 16, marginBottom: 8 },
   emptyFailed: { color: '#64748B', fontSize: 12, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, textAlign: 'center' },
   failedEmailCard: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 14, padding: 12, marginBottom: 10 },
