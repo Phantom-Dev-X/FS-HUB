@@ -1,27 +1,65 @@
 // ROUTE - STABLE GOOGLE WEB MAP VERSION (NO NATIVE MAP CRASH)
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import SmartFooter from './SmartFooter';
 import { RouteStore } from './RouteStore';
+import { DatabaseEngine } from './_DatabaseEngine';
+import { OrderStore } from './_OrderStore';
 import GoogleWebMap from '../components/GoogleWebMap';
+
+const toRouteClient = (client) => ({
+  id: client.id,
+  name: client.name || 'Client Store',
+  address: client.address || 'Assigned Route',
+  coordinate: client.coordinate || (
+    client.latitude && client.longitude
+      ? { latitude: Number(client.latitude), longitude: Number(client.longitude) }
+      : null
+  ) || RouteStore.repLocation,
+  distance: client.distance || 'Route Pending',
+  selected: client.selected !== false,
+  visited: Boolean(client.visited),
+});
 
 export default function RouteOverviewScreen() {
   const repLoc = RouteStore.repLocation;
+  const [routeClients, setRouteClients] = useState(RouteStore.clients || []);
 
   useEffect(() => {
+    let active = true;
+
     if (RouteStore.isJourneyActive) {
       router.replace('/route-active');
+      return () => { active = false; };
     }
+
+    (async () => {
+      try {
+        const session = await DatabaseEngine.getSession();
+        const repId = session?.id || OrderStore.currentAgent?.id;
+        if (!repId || repId === 'REP-GUEST') return;
+        const myClients = await DatabaseEngine.getClientsByRep(repId);
+        const mapped = myClients.map(toRouteClient);
+        RouteStore.clients = mapped;
+        if (active) setRouteClients(mapped);
+      } catch (e) {
+        console.log('Route clients load error', e.message);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
     <View style={styles.container}>
       <GoogleWebMap
         center={repLoc}
-        markers={RouteStore.clients.slice(0, 12).map(store => ({
+        markers={routeClients.slice(0, 12).map(store => ({
           id: store.id,
           coordinate: store.coordinate,
           title: store.name,

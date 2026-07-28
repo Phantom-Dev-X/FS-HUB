@@ -1,5 +1,5 @@
 // ROUTE SELECT - WHITE PREMIUM, FIXED TEXT ERROR, BIG COMPANY - ONLY OWN CLIENTS
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -8,11 +8,45 @@ import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { RouteStore } from './RouteStore';
+import { DatabaseEngine } from './_DatabaseEngine';
+import { OrderStore } from './_OrderStore';
+
+const toRouteClient = (client) => ({
+  id: client.id,
+  name: client.name || 'Client Store',
+  address: client.address || 'Assigned Route',
+  coordinate: client.coordinate || (
+    client.latitude && client.longitude
+      ? { latitude: Number(client.latitude), longitude: Number(client.longitude) }
+      : null
+  ) || RouteStore.repLocation,
+  distance: client.distance || 'Route Pending',
+  selected: client.selected !== false,
+  visited: Boolean(client.visited),
+});
 
 export default function RouteSelectScreen() {
   const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
-  const [clientList, setClientList] = useState(RouteStore.clients);
+  const [clientList, setClientList] = useState(RouteStore.clients || []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const session = await DatabaseEngine.getSession();
+        const repId = session?.id || OrderStore.currentAgent?.id;
+        if (!repId || repId === 'REP-GUEST') return;
+        const myClients = await DatabaseEngine.getClientsByRep(repId);
+        const mapped = myClients.map(toRouteClient);
+        RouteStore.clients = mapped;
+        if (active) setClientList(mapped);
+      } catch (e) {
+        console.log('Route select load error', e.message);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const toggleSelectStore = (id) => {
     const updated = clientList.map(c => c.id === id ? { ...c, selected: !c.selected } : c);
