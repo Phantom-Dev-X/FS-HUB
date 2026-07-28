@@ -90,6 +90,9 @@ export default function CheckoutSummaryScreen() {
 
     setIsEmailSending(true);
 
+    const clientEmail = client.email || client.registered_email || '';
+    const repEmail = OrderStore.currentAgent?.email || '';
+
     // Persist the order before attempting non-essential email delivery. It is
     // queued locally and the Sync screen uploads it to Supabase without risking
     // data loss when the phone has poor connectivity.
@@ -97,9 +100,13 @@ export default function CheckoutSummaryScreen() {
       invoiceNumber,
       store: client.name,
       clientName: client.name,
+      clientId: client.id,
+      clientEmail,
       repId: OrderStore.currentAgent?.id,
+      repEmail,
       payableTotal: finalPayableTotal,
       grandTotal,
+      discountAmount,
       cartItems,
       gpsVerified: client.gpsVerified || client.gps_coordinates || '',
       paymentCycle,
@@ -121,8 +128,6 @@ export default function CheckoutSummaryScreen() {
     } catch (e) {
       syncResult = { success: false, error: e.message };
     }
-
-    const clientEmail = client.email || client.registered_email || '';
 
     // Call our automated background server email service!
     const emailResponse = await EmailService.sendOrderReceiptEmail({

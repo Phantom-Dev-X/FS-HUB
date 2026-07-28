@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { EmailService } from './_EmailService';
 
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -53,6 +56,13 @@ const getCreatedAt = (order) => {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 };
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
 const getTotals = (order, items) => {
   const itemSubtotal = items.reduce((sum, item) => {
     const qty = toNumber(item.qty ?? item.quantity ?? 0);
@@ -78,6 +88,16 @@ const getTotals = (order, items) => {
   };
 };
 
+const buildReceiptHtml = ({ order, items, totals }) => {
+  const invoice = getReceiptNo(order);
+  const rows = items.map(item => {
+    const qty = toNumber(item.qty ?? item.quantity ?? 0);
+    const price = toNumber(item.price ?? item.unit_price ?? item.unitPrice ?? 0);
+    return `<tr><td><strong>${escapeHtml(item.name || 'Unnamed Product')}</strong><br/><small>${escapeHtml(item.barcode ? `#${item.barcode}` : '')}</small></td><td>${qty}</td><td>${formatNaira(price)}</td><td>${formatNaira(qty * price)}</td></tr>`;
+  }).join('');
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/><style>body{font-family:Arial,sans-serif;color:#0f172a;padding:24px} .card{border:1px solid #dbeafe;border-radius:18px;padding:22px} h1{color:#1e3a8a;margin:0;font-size:28px}.sub{color:#64748b;margin-top:4px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px}.label{font-size:10px;color:#94a3b8;font-weight:800}.value{font-size:13px;font-weight:800;margin-top:4px}table{width:100%;border-collapse:collapse;margin-top:14px}th{background:#eff6ff;color:#1e3a8a;text-align:left;font-size:11px;padding:10px}td{border-bottom:1px solid #e2e8f0;padding:10px;font-size:12px}td:nth-child(2),td:nth-child(3),td:nth-child(4),th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right}.totals{margin-top:18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px}.line{display:flex;justify-content:space-between;margin-bottom:8px}.grand{font-size:20px;font-weight:900;color:#059669;border-top:1px solid #e2e8f0;padding-top:10px}.foot{text-align:center;color:#64748b;font-size:11px;margin-top:18px}</style></head><body><div class="card"><h1>FS HUB</h1><div class="sub">Official Order Receipt • #${escapeHtml(invoice)}</div><div class="meta"><div class="box"><div class="label">CLIENT</div><div class="value">${escapeHtml(getClientName(order))}</div></div><div class="box"><div class="label">REP ID</div><div class="value">${escapeHtml(getRepId(order))}</div></div><div class="box"><div class="label">DATE</div><div class="value">${escapeHtml(getCreatedAt(order).toLocaleString())}</div></div><div class="box"><div class="label">STATUS</div><div class="value">${escapeHtml(order.status || order.syncStatus || 'Synced')}</div></div></div><table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No item lines found</td></tr>'}</tbody></table><div class="totals"><div class="line"><span>Subtotal</span><strong>${formatNaira(totals.subtotal)}</strong></div>${totals.discount > 0 ? `<div class="line"><span>Discount</span><strong>-${formatNaira(totals.discount)}</strong></div>` : ''}<div class="line grand"><span>Payable Total</span><span>${formatNaira(totals.payable)}</span></div></div><div class="foot">Thank you for doing business with FS Hub.</div></div></body></html>`;
+};
+
 export default function ReceiptScreen() {
   const params = useLocalSearchParams();
   const receiptNo = String(params.receiptNo || params.id || '');
@@ -86,6 +106,7 @@ export default function ReceiptScreen() {
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState(null);
   const [notFound, setNotFound] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -132,6 +153,57 @@ export default function ReceiptScreen() {
   const totalUnits = items.reduce((sum, item) => sum + toNumber(item.qty ?? item.quantity ?? 0), 0);
   const date = order ? getCreatedAt(order) : new Date();
   const status = order?.status || order?.syncStatus || (order?.__source === 'offline' ? 'Pending Sync' : 'Synced');
+
+  const handleResendToClient = async () => {
+    const clientEmail = order?.client_email || order?.clientEmail || order?.registered_email || '';
+    if (!clientEmail) return Alert.alert('Client Email Missing', 'This receipt does not have a saved client email. Future orders will store it automatically.');
+    setActionLoading('client');
+    const res = await EmailService.sendOrderReceiptEmail({
+      clientName: getClientName(order),
+      clientEmail,
+      invoiceNumber: getReceiptNo(order),
+      cartItems: items,
+      grandTotal: totals.grandTotal || totals.subtotal,
+      discountAmount: totals.discount,
+      payableTotal: totals.payable,
+      paymentCycle: order?.payment_cycle || order?.paymentCycle || 'N/A',
+      deliveryUrgency: order?.delivery_urgency || order?.deliveryUrgency || 'N/A',
+    });
+    setActionLoading(null);
+    Alert.alert(res.success ? 'Receipt Sent ✅' : 'Email Failed', res.success ? `Receipt sent to ${clientEmail}.` : res.message || 'Could not send email.');
+  };
+
+  const handleSendCopyToRep = async () => {
+    let repEmail = order?.rep_email || order?.repEmail || '';
+    if (!repEmail) {
+      const reps = await DatabaseEngine.getAllReps();
+      const rep = reps.find(r => r.id === getRepId(order));
+      repEmail = rep?.email || '';
+    }
+    if (!repEmail) return Alert.alert('Rep Email Missing', 'Could not find the rep email for this receipt.');
+    setActionLoading('rep');
+    const htmlText = `Receipt #${getReceiptNo(order)}\nClient: ${getClientName(order)}\nTotal: ${formatNaira(totals.payable)}\n\nItems:\n${items.map((item, i) => `${i + 1}. ${item.name} x${item.qty || item.quantity || 0}`).join('\n')}`;
+    const res = await EmailService._sendRawEmail(repEmail, `FS Hub Receipt Copy #${getReceiptNo(order)}`, htmlText, getRepId(order), { kind: 'receipt_copy', relatedId: getReceiptNo(order) });
+    setActionLoading(null);
+    Alert.alert(res.success ? 'Copy Sent ✅' : 'Email Failed', res.success ? `Receipt copy sent to ${repEmail}.` : res.message || 'Could not send email.');
+  };
+
+  const handleExportPdf = async () => {
+    setActionLoading('pdf');
+    try {
+      const html = buildReceiptHtml({ order, items, totals });
+      const file = await Print.printToFileAsync({ html, base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: `Save or share receipt ${getReceiptNo(order)}` });
+      } else {
+        Alert.alert('PDF Created', `Receipt PDF created at: ${file.uri}`);
+      }
+    } catch (e) {
+      Alert.alert('PDF Export Failed', e.message || 'Could not create PDF.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -241,6 +313,18 @@ export default function ReceiptScreen() {
             <View style={styles.grandRow}><Text style={styles.grandLabel}>Payable Total</Text><Text style={styles.grandValue}>{formatNaira(totals.payable)}</Text></View>
           </View>
 
+          <View style={styles.actionsBox}>
+            <TouchableOpacity style={styles.actionBtn} onPress={handleResendToClient} disabled={Boolean(actionLoading)}>
+              {actionLoading === 'client' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionBtnText}>Resend to Client</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, styles.repBtn]} onPress={handleSendCopyToRep} disabled={Boolean(actionLoading)}>
+              {actionLoading === 'rep' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionBtnText}>Send Copy to Rep</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, styles.pdfBtn]} onPress={handleExportPdf} disabled={Boolean(actionLoading)}>
+              {actionLoading === 'pdf' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionBtnText}>Download / Share PDF</Text>}
+            </TouchableOpacity>
+          </View>
+
           <Text style={styles.footerNote}>Thank you for doing business with FS Hub.</Text>
         </View>
       </ScrollView>
@@ -288,6 +372,11 @@ const styles = StyleSheet.create({
   grandRow: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   grandLabel: { color: '#1E3A8A', fontSize: 14, fontWeight: '900' },
   grandValue: { color: '#059669', fontSize: 21, fontWeight: '900' },
+  actionsBox: { marginTop: 14, gap: 9 },
+  actionBtn: { backgroundColor: '#2563EB', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
+  repBtn: { backgroundColor: '#10B981' },
+  pdfBtn: { backgroundColor: '#0F172A' },
+  actionBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   footerNote: { color: '#64748B', textAlign: 'center', fontSize: 11, marginTop: 16, fontWeight: '700' },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   loadingText: { marginTop: 10, color: '#334155', fontWeight: '800' },

@@ -116,14 +116,15 @@ function AppStack() {
     (async () => {
       try {
         await DatabaseEngine.initDatabase();
-        const [reps, clients, catalog] = await Promise.all([
+        const [reps, catalog] = await Promise.all([
           DatabaseEngine.getAllReps(),
-          DatabaseEngine.getAllClients(),
           DatabaseEngine.getCatalog(),
         ]);
 
+        // Do not load all clients globally at startup. Rep screens must fetch
+        // only their own clients by rep_id; admin screens fetch all explicitly.
         OrderStore.activeReps = reps || [];
-        OrderStore.clients = clients || [];
+        OrderStore.clients = [];
         OrderStore.catalog = catalog || [];
 
         const session = await DatabaseEngine.getSession();

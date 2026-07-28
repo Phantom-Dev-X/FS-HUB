@@ -858,17 +858,25 @@ export const DatabaseEngine = {
         ? grandTotalRaw
         : (Number(String(grandTotalRaw || '0').replace(/[^0-9.-]/g, '')) || payableTotal || 0);
       const geotag = orderObj.gpsVerified || orderObj.geotag_lat_lon || orderObj.geotag || orderObj.gps_coordinates || '';
+      const clientEmail = orderObj.clientEmail || orderObj.client_email || '';
+      const repEmail = orderObj.repEmail || orderObj.rep_email || '';
 
       const payload = {
         invoice_number: orderObj.invoiceNumber || orderObj.invoice_number || orderObj.id || `INV-${Math.floor(Math.random()*9000)}`,
         store_name: clientName,
         client_name: clientName,
+        client_id: orderObj.clientId || orderObj.client_id || '',
+        client_email: clientEmail,
         rep_id: orderObj.repId || orderObj.rep_id || 'UNKNOWN',
+        rep_email: repEmail,
         grand_total: grandTotal,
         total_amount: payableTotal || grandTotal,
         payable_total: payableTotal || grandTotal,
         discount_amount: Number(orderObj.discountAmount ?? orderObj.discount_amount ?? 0) || 0,
         order_items: orderObj.cartItems || orderObj.items || orderObj.order_items || [],
+        payment_cycle: orderObj.paymentCycle || orderObj.payment_cycle || '',
+        delivery_urgency: orderObj.deliveryUrgency || orderObj.delivery_urgency || '',
+        order_notes: orderObj.orderNotes || orderObj.order_notes || '',
         status: orderObj.status || 'Pending Dispatch ⏳',
         geotag_lat_lon: geotag,
         geotag: geotag,
