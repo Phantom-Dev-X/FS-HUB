@@ -3,7 +3,7 @@
 // - Nice in-page alert cards instead of ugly Alert popups
 // - Inputs disabled while loading
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,21 +19,29 @@ const AlertCard = ({ type, title, message, onClose }) => {
   const iconColor = type === 'error' ? '#EF4444' : type === 'success' ? '#10B981' : '#F59E0B';
 
   return (
-    <View style={styles.popupOverlay} pointerEvents="box-none">
-      <View style={[styles.popupCard, { backgroundColor: bgColor, borderColor }]} pointerEvents="auto">
-        <TouchableOpacity style={styles.popupCloseArea} onPress={onClose} activeOpacity={1} />
-        <View style={styles.alertRow}>
-          <Ionicons name={icon} size={24} color={iconColor} />
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.alertTitle, { color: iconColor }]}>{title}</Text>
-            <Text style={styles.alertMessage}>{message}</Text>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.popupOverlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.popupCard, { backgroundColor: bgColor, borderColor }]}>
+          <View style={styles.alertRow}>
+            <Ionicons name={icon} size={24} color={iconColor} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.alertTitle, { color: iconColor }]}>{title}</Text>
+              <Text style={styles.alertMessage}>{message}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.popupCloseBtn}>
+              <Ionicons name="close" size={20} color="#64748B" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.popupCloseBtn}>
-            <Ionicons name="close" size={20} color="#64748B" />
-          </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </Modal>
   );
 };
 
@@ -341,12 +349,10 @@ const styles = StyleSheet.create({
   linkTextSecondary: { color: '#1E3A8A', fontSize: 14, fontWeight: '600', textAlign: 'center' },
   // Popup overlay for centered alert card
   popupOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 999,
     paddingHorizontal: 24,
   },
   popupCard: {
@@ -360,13 +366,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
-  },
-  popupCloseArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   popupCloseBtn: {
     padding: 4,
