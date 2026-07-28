@@ -1,152 +1,351 @@
-// FS HUB PROFILE - GLOBAL THEME SYNC (fixed)
-// Now toggle in profile syncs for ALL pages via ThemeContext
-// Removed isolated local theme, now uses useTheme()
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Switch, Alert, Image } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
+import { DatabaseEngine } from './_DatabaseEngine';
+import { EmailService } from './_EmailService';
 import { useTheme } from '../context/ThemeContext';
+
+const PREF_KEY = '@fshub_profile_preferences';
+
+const DEFAULT_PREFS = {
+  compactCards: false,
+  autoOpenNavigation: false,
+  autoMarkVisited: true,
+  autoSendReceipt: true,
+  sendRepCopy: false,
+  receiptFormat: 'Detailed',
+};
+
+const cleanName = (name) => String(name || 'Field Officer').replace(' (Field Officer)', '');
 
 export default function ProfileScreen() {
   const { isDark, toggleTheme, colors } = useTheme();
-  const [gpsWatermark, setGpsWatermark] = useState(true);
-  const [offlineAutoSync, setOfflineAutoSync] = useState(true);
-  const agent = OrderStore.currentAgent;
+  const [agent, setAgent] = useState(OrderStore.currentAgent);
+  const [avatarUri, setAvatarUri] = useState(OrderStore.currentAgent?.avatar || null);
+  const [modal, setModal] = useState(null);
+  const [stats, setStats] = useState({ clients: 0, orders: 0, offline: 0 });
+  const [syncing, setSyncing] = useState(false);
+  const [failedEmails, setFailedEmails] = useState([]);
+  const [retryingEmailId, setRetryingEmailId] = useState(null);
+  const [prefs, setPrefs] = useState(DEFAULT_PREFS);
+
+  const loadProfileData = useCallback(async () => {
+    const session = await DatabaseEngine.getSession();
+    const current = session || OrderStore.currentAgent;
+    if (current) {
+      const mapped = {
+        name: cleanName(current.name || current.fullName),
+        id: current.id || 'REP-GUEST',
+        role: current.accountType === 'admin' ? 'Headquarters Admin' : (current.role || 'Field Officer'),
+        territory: current.zone || current.territory || 'Ikeja Commercial Zone',
+        email: current.email || '',
+        initials: current.initials || cleanName(current.name || current.fullName).substring(0, 2).toUpperCase() || 'FO',
+        avatar: current.avatar || null,
+      };
+      setAgent(mapped);
+      setAvatarUri(mapped.avatar);
+    }
+
+    const repId = current?.id || OrderStore.currentAgent?.id;
+    const [clients, orders, offline, emails, prefRaw] = await Promise.all([
+      repId && repId !== 'REP-GUEST' ? DatabaseEngine.getClientsByRep(repId) : Promise.resolve([]),
+      repId && repId !== 'REP-GUEST' ? DatabaseEngine.getOrdersByRep(repId) : Promise.resolve([]),
+      DatabaseEngine.getOfflineOrders(),
+      EmailService.getFailedEmails(),
+      AsyncStorage.getItem(PREF_KEY),
+    ]);
+
+    setStats({ clients: clients.length || 0, orders: orders.length || 0, offline: offline.length || 0 });
+    setFailedEmails(emails);
+    if (prefRaw) {
+      try { setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(prefRaw) }); } catch {}
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadProfileData(); }, [loadProfileData]));
+
+  useEffect(() => {
+    AsyncStorage.setItem(PREF_KEY, JSON.stringify(prefs)).catch(() => {});
+  }, [prefs]);
+
+  const updatePref = (key, value) => setPrefs(prev => ({ ...prev, [key]: value }));
 
   const handleLogout = () => {
-    Alert.alert('🔒 Log Out', 'End your officer session? Ensure offline orders synced!', [
+    Alert.alert('🔒 Log Out', 'End your officer session? Offline orders remain saved until synced.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => {
-        // Clear session and current agent
-        const { DatabaseEngine } = await import('./_DatabaseEngine');
-        const { SupabaseAuth } = await import('./_SupabaseAuth');
-        await SupabaseAuth.signOut();
-        await DatabaseEngine.clearSession();
-        router.replace('/');
-      }},
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          const { SupabaseAuth } = await import('./_SupabaseAuth');
+          await SupabaseAuth.signOut();
+          await DatabaseEngine.clearSession();
+          router.replace('/');
+        }
+      },
     ]);
   };
 
-  const renderAvatar = () => {
-    if (agent.avatar) {
-      return <Image source={{ uri: agent.avatar }} style={styles.avatarImage} />;
+  const pickAvatar = async (mode) => {
+    try {
+      let result;
+      if (mode === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (permission.status !== 'granted') return Alert.alert('Camera Permission', 'Allow camera to take profile photo.');
+        result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
+      } else {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permission.status !== 'granted') return Alert.alert('Gallery Permission', 'Allow gallery to choose profile photo.');
+        result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
+      }
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setAvatarUri(result.assets[0].uri);
+        OrderStore.currentAgent.avatar = result.assets[0].uri;
+        Alert.alert('Photo Updated', 'Profile photo updated on this device. Cloud upload can be added later.');
+        setModal(null);
+      }
+    } catch (e) {
+      Alert.alert('Photo Error', e.message);
     }
-    return (
-      <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-        <Text style={styles.avatarText}>{agent.initials}</Text>
-      </View>
-    );
   };
 
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    const res = await DatabaseEngine.syncToCloudBackend();
+    setSyncing(false);
+    await loadProfileData();
+    Alert.alert(res.success ? 'Sync Complete' : 'Sync Issue', res.message || res.error || 'Sync finished.');
+  };
+
+  const retryEmail = async (id) => {
+    setRetryingEmailId(id);
+    const result = await EmailService.retryFailedEmail(id);
+    setRetryingEmailId(null);
+    const emails = await EmailService.getFailedEmails();
+    setFailedEmails(emails);
+    Alert.alert(result.success ? 'Email Sent' : 'Retry Failed', result.message || 'Done');
+  };
+
+  const renderAvatar = () => {
+    if (avatarUri) return <Image source={{ uri: avatarUri }} style={styles.avatarImage} />;
+    return <View style={styles.avatarCircle}><Text style={styles.avatarText}>{agent?.initials || 'FO'}</Text></View>;
+  };
+
+  const closeModal = () => setModal(null);
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.headerRow}>
-          <Text style={[styles.mainTitle, { color: colors.cyan }]}>👤 REP PROFILE</Text>
-          <TouchableOpacity onPress={() => router.replace('/settings')} style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="settings-outline" size={18} color={colors.subText} />
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.hero}>
+        <View style={styles.topbar}>
+          <TouchableOpacity onPress={() => router.replace('/home')} style={styles.topIcon}><Ionicons name="chevron-back" size={18} color="#FFF" /></TouchableOpacity>
+          <Text style={styles.topPill}>FIELD OFFICER PROFILE</Text>
+          <TouchableOpacity onPress={() => setModal('appearance')} style={styles.topIcon}><Ionicons name="settings-outline" size={18} color="#FFF" /></TouchableOpacity>
         </View>
-        <Text style={[styles.subText, { color: colors.subText }]}>
-          Review credentials, commission, and app appearance (theme syncs globally).
-        </Text>
-
-        <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cyan }]}>
-          <View style={styles.avatarRow}>
+        <View style={styles.identityRow}>
+          <TouchableOpacity style={styles.avatarWrap} onPress={() => setModal('photo')}>
             {renderAvatar()}
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.repName, { color: colors.mainText }]}>{agent.name}</Text>
-              <Text style={[styles.repTitle, { color: colors.cyan }]}>{agent.role}</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-                <View style={[styles.idBadge, { backgroundColor: colors.background }]}>
-                  <Text style={[styles.idBadgeText, { color: colors.cyan }]}>ID: {agent.id}</Text>
-                </View>
-                <View style={[styles.statusBadge, { borderColor: colors.green }]}>
-                  <Text style={{ color: colors.green, fontSize: 10, fontWeight: '900' }}>🟢 Active</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Text style={[styles.infoLabel, { color: colors.subText }]}>ASSIGNED TERRITORY</Text>
-          <Text style={[styles.infoValue, { color: colors.mainText }]}>{agent.territory}</Text>
-        </View>
-
-        <Text style={[styles.sectionHeading, { color: colors.heading }]}>🎨 APP APPEARANCE (Global Sync)</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name={isDark ? "moon" : "sunny"} size={18} color={colors.cyan} />
-                <Text style={[styles.settingTitle, { color: colors.mainText }]}>{isDark ? 'Dark Mode' : 'Light Mode'}</Text>
-              </View>
-              <Text style={[styles.settingSub, { color: colors.subText }]}>Toggle white / dark theme for ALL pages. Saved automatically.</Text>
-            </View>
-            <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: '#CBD5E1', true: '#2563EB' }} thumbColor="#FFFFFF" />
+            <View style={styles.cameraBadge}><Ionicons name="camera" size={14} color="#FFF" /></View>
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.agentName} numberOfLines={1}>{agent?.name || 'Field Officer'}</Text>
+            <Text style={styles.agentRole} numberOfLines={1}>{agent?.role || 'Field Officer'} • {agent?.territory || 'Ikeja'}</Text>
+            <View style={styles.badgeRow}><Text style={styles.heroBadge}>🟢 Online</Text><Text style={styles.heroBadge}>{agent?.id || 'REP-GUEST'}</Text></View>
           </View>
         </View>
+      </View>
 
-        <TouchableOpacity 
-          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/settings')}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View>
-              <Text style={[styles.settingTitle, { color: colors.mainText }]}>Field Settings & Preferences</Text>
-              <Text style={[styles.settingSub, { color: colors.subText }]}>Background sync, GPS watermark, theme</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.subText} />
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.statsCard}>
+          <Stat num={stats.clients} label="Clients" />
+          <Stat num={stats.orders} label="Orders" />
+          <Stat num={stats.offline} label="Pending" />
+        </View>
+
+        <Text style={styles.sectionTitle}>Verified Officer Card</Text>
+        <View style={styles.idCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.idLabel}>REP ID</Text><Text style={styles.idValue}>{agent?.id || 'REP-GUEST'}</Text>
+            <Text style={styles.idLabel}>EMAIL</Text><Text style={styles.idValue}>{agent?.email || 'Not set'}</Text>
+            <Text style={styles.idLabel}>TERRITORY</Text><Text style={styles.idValue}>{agent?.territory || 'Unassigned'}</Text>
           </View>
-        </TouchableOpacity>
+          <View style={styles.qrMock}><Text style={styles.qrText}>FS</Text></View>
+        </View>
 
-        <TouchableOpacity style={[styles.logoutBtn, { borderColor: '#EF4444' }]} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-          <Text style={styles.logoutBtnText}> Log Out of Device</Text>
-        </TouchableOpacity>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.quickGrid}>
+          <QuickAction icon="camera-outline" title="Change Photo" onPress={() => setModal('photo')} />
+          <QuickAction icon="map-outline" title="My Territory" onPress={() => router.push('/territories')} />
+          <QuickAction icon="shield-checkmark-outline" title="Security" onPress={() => setModal('security')} />
+          <QuickAction icon="cloud-upload-outline" title="Sync Status" onPress={() => setModal('sync')} />
+        </View>
 
-        <Text style={[styles.versionText, { color: colors.subText }]}>FS Hub v2.4 • All routes fixed • Primary: peterpatrick@gmail.com</Text>
+        <Text style={styles.sectionTitle}>Account & Preferences</Text>
+        <View style={styles.listCard}>
+          <ListItem icon="moon-outline" title="Appearance" sub="Light / dark theme, compact cards" onPress={() => setModal('appearance')} />
+          <ListItem icon="navigate-outline" title="Route Preferences" sub="Navigation app and visit automation" onPress={() => setModal('route')} />
+          <ListItem icon="receipt-outline" title="Receipts & Email" sub="Failed email list and receipt behavior" onPress={() => setModal('receipts')} />
+        </View>
+
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+          <Text style={styles.logoutText}>Log Out of Device</Text>
+        </TouchableOpacity>
       </ScrollView>
+
       <SmartFooter />
+      <ProfileModal visible={Boolean(modal)} title={getModalTitle(modal)} onClose={closeModal}>
+        {modal === 'photo' && <PhotoSheet onCamera={() => pickAvatar('camera')} onGallery={() => pickAvatar('gallery')} onRemove={() => { setAvatarUri(null); OrderStore.currentAgent.avatar = null; closeModal(); }} />}
+        {modal === 'security' && <SecuritySheet agent={agent} onLogout={handleLogout} />}
+        {modal === 'sync' && <SyncSheet stats={stats} syncing={syncing} onSync={handleSyncNow} />}
+        {modal === 'appearance' && <AppearanceSheet isDark={isDark} toggleTheme={toggleTheme} prefs={prefs} updatePref={updatePref} />}
+        {modal === 'route' && <RoutePrefsSheet prefs={prefs} updatePref={updatePref} />}
+        {modal === 'receipts' && <ReceiptsSheet prefs={prefs} updatePref={updatePref} failedEmails={failedEmails} retryingEmailId={retryingEmailId} onRetry={retryEmail} />}
+      </ProfileModal>
     </SafeAreaView>
   );
 }
 
+const getModalTitle = (modal) => ({
+  photo: 'Change Profile Photo',
+  security: 'Security & Login',
+  sync: 'Sync Status',
+  appearance: 'Appearance',
+  route: 'Route Preferences',
+  receipts: 'Receipts & Email',
+})[modal] || '';
+
+function Stat({ num, label }) {
+  return <View style={styles.statBox}><Text style={styles.statNum}>{num}</Text><Text style={styles.statLabel}>{label}</Text></View>;
+}
+
+function QuickAction({ icon, title, onPress }) {
+  return <TouchableOpacity style={styles.quickAction} onPress={onPress}><View style={styles.quickIcon}><Ionicons name={icon} size={18} color="#2563EB" /></View><Text style={styles.quickText}>{title}</Text></TouchableOpacity>;
+}
+
+function ListItem({ icon, title, sub, onPress }) {
+  return <TouchableOpacity style={styles.listItem} onPress={onPress}><View style={styles.listIcon}><Ionicons name={icon} size={18} color="#2563EB" /></View><View style={{ flex: 1 }}><Text style={styles.listTitle}>{title}</Text><Text style={styles.listSub}>{sub}</Text></View><Ionicons name="chevron-forward" size={18} color="#94A3B8" /></TouchableOpacity>;
+}
+
+function ProfileModal({ visible, title, onClose, children }) {
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalOverlay}><View style={styles.sheet}><View style={styles.sheetHandle} /><View style={styles.sheetHeader}><Text style={styles.sheetTitle}>{title}</Text><TouchableOpacity style={styles.closeBtn} onPress={onClose}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity></View>{children}</View></View></Modal>;
+}
+
+function Option({ icon, title, sub, onPress, danger, loading }) {
+  return <TouchableOpacity style={[styles.option, danger && styles.optionDanger]} onPress={onPress} disabled={loading}><View style={[styles.optionIcon, danger && styles.optionDangerIcon]}>{loading ? <ActivityIndicator color="#2563EB" /> : <Ionicons name={icon} size={18} color={danger ? '#DC2626' : '#2563EB'} />}</View><View style={{ flex: 1 }}><Text style={[styles.optionTitle, danger && { color: '#DC2626' }]}>{title}</Text>{sub ? <Text style={styles.optionSub}>{sub}</Text> : null}</View></TouchableOpacity>;
+}
+
+function PhotoSheet({ onCamera, onGallery, onRemove }) {
+  return <><Option icon="camera-outline" title="Take New Photo" sub="Open camera and save face photo" onPress={onCamera} /><Option icon="images-outline" title="Choose From Gallery" sub="Pick an existing professional photo" onPress={onGallery} /><Option icon="trash-outline" title="Remove Current Photo" sub="Return to initials avatar" danger onPress={onRemove} /></>;
+}
+
+function SecuritySheet({ agent, onLogout }) {
+  return <><InfoRow title="Email" sub={agent?.email || 'Not set'} /><InfoRow title="Rep ID" sub={agent?.id || 'REP-GUEST'} /><Option icon="key-outline" title="Reset Password" sub="Open password reset email/OTP flow" onPress={() => router.push('/forgot')} /><Option icon="log-out-outline" title="Sign Out" sub="Clear this device session" danger onPress={onLogout} /></>;
+}
+
+function SyncSheet({ stats, syncing, onSync }) {
+  return <><View style={styles.syncGrid}><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline}</Text><Text style={styles.syncLabel}>offline pending</Text></View><View style={styles.syncBox}><Text style={styles.syncNum}>{stats.offline === 0 ? '100%' : 'Check'}</Text><Text style={styles.syncLabel}>cloud health</Text></View></View><Option icon="sync-outline" title="Sync Now" sub="Upload pending orders to Supabase" loading={syncing} onPress={onSync} /><Option icon="list-outline" title="View Offline Queue" sub="Open detailed sync screen" onPress={() => router.push('/sync')} /></>;
+}
+
+function AppearanceSheet({ isDark, toggleTheme, prefs, updatePref }) {
+  return <><ToggleRow title="Dark Mode" sub="Switch white/dark app theme" value={isDark} onValueChange={toggleTheme} /><ToggleRow title="Compact Cards" sub="Show denser cards where supported" value={prefs.compactCards} onValueChange={(v) => updatePref('compactCards', v)} /></>;
+}
+
+function RoutePrefsSheet({ prefs, updatePref }) {
+  return <><InfoRow title="Default Navigation App" sub="Google Maps for voice directions" /><ToggleRow title="Auto-open Navigation" sub="Launch Google Maps after route starts" value={prefs.autoOpenNavigation} onValueChange={(v) => updatePref('autoOpenNavigation', v)} /><ToggleRow title="Auto-mark Visited" sub="Mark a stop visited after verified check-in" value={prefs.autoMarkVisited} onValueChange={(v) => updatePref('autoMarkVisited', v)} /></>;
+}
+
+function ReceiptsSheet({ prefs, updatePref, failedEmails, retryingEmailId, onRetry }) {
+  return <><ToggleRow title="Auto-send Client Receipt" sub="Email receipt after order submit" value={prefs.autoSendReceipt} onValueChange={(v) => updatePref('autoSendReceipt', v)} /><ToggleRow title="Send Copy to Rep" sub="CC logged-in rep email later" value={prefs.sendRepCopy} onValueChange={(v) => updatePref('sendRepCopy', v)} /><InfoRow title="Receipt Format" sub={prefs.receiptFormat} /><Text style={styles.failedTitle}>Failed Emails ({failedEmails.length})</Text>{failedEmails.length === 0 ? <Text style={styles.emptyFailed}>No failed emails right now.</Text> : failedEmails.map(email => <View key={email.id} style={styles.failedEmailCard}><Text style={styles.failedSubject} numberOfLines={1}>{email.subject}</Text><Text style={styles.failedMeta} numberOfLines={1}>To: {email.toEmail}</Text><Text style={styles.failedMeta} numberOfLines={2}>Error: {email.lastError}</Text><TouchableOpacity style={styles.retryBtn} onPress={() => onRetry(email.id)} disabled={retryingEmailId === email.id}>{retryingEmailId === email.id ? <ActivityIndicator color="#FFF" /> : <Text style={styles.retryText}>Retry this email</Text>}</TouchableOpacity></View>)}</>;
+}
+
+function InfoRow({ title, sub }) {
+  return <View style={styles.infoRow}><View><Text style={styles.infoTitle}>{title}</Text><Text style={styles.infoSub}>{sub}</Text></View></View>;
+}
+
+function ToggleRow({ title, sub, value, onValueChange }) {
+  return <View style={styles.toggleRow}><View style={{ flex: 1, marginRight: 12 }}><Text style={styles.infoTitle}>{title}</Text><Text style={styles.infoSub}>{sub}</Text></View><Switch value={value} onValueChange={onValueChange} trackColor={{ false: '#CBD5E1', true: '#2563EB' }} thumbColor="#FFFFFF" /></View>;
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 90 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  mainTitle: { fontSize: 20, fontWeight: '900' },
-  settingsBtn: { padding: 10, borderRadius: 12, borderWidth: 1 },
-  subText: { fontSize: 12, lineHeight: 18, marginBottom: 16 },
-  profileCard: { borderRadius: 20, padding: 18, borderWidth: 1.5, marginBottom: 22 },
-  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  avatarCircle: { width: 64, height: 64, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  avatarImage: { width: 64, height: 64, borderRadius: 18 },
-  avatarText: { color: '#FFF', fontSize: 22, fontWeight: '900' },
-  repName: { fontSize: 18, fontWeight: '900' },
-  repTitle: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  idBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: '#334155' },
-  idBadgeText: { fontSize: 10, fontWeight: '900' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
-  divider: { height: 1, marginVertical: 14 },
-  infoLabel: { fontSize: 10, fontWeight: '800', marginBottom: 3 },
-  infoValue: { fontSize: 14, fontWeight: '800' },
-  sectionHeading: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8, marginBottom: 10, marginTop: 6 },
-  card: { borderRadius: 18, padding: 16, borderWidth: 1, marginBottom: 18 },
-  commissionLabel: { fontSize: 11, fontWeight: '800' },
-  commissionAmount: { fontSize: 26, fontWeight: '900', marginTop: 2 },
-  payoutNotice: { fontSize: 12, marginTop: 4 },
-  progressTrack: { width: '100%', height: 10, borderRadius: 5, overflow: 'hidden', marginTop: 12, marginBottom: 6 },
-  progressBar: { height: '100%', borderRadius: 5 },
-  targetSub: { fontSize: 11, fontWeight: '600' },
-  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },
-  settingTitle: { fontSize: 14, fontWeight: '800', marginBottom: 3 },
-  settingSub: { fontSize: 11, lineHeight: 16 },
-  logoutBtn: { flexDirection: 'row', paddingVertical: 16, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginTop: 6, marginBottom: 20, backgroundColor: '#FEF2F2' },
-  logoutBtnText: { color: '#EF4444', fontSize: 14, fontWeight: '900' },
-  versionText: { fontSize: 11, textAlign: 'center', marginBottom: 20 },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  hero: { height: 246, backgroundColor: '#2563EB', paddingHorizontal: 18, paddingTop: 44, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  topIcon: { width: 36, height: 36, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  topPill: { color: '#FFF', fontSize: 11, fontWeight: '900', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  avatarWrap: { position: 'relative' },
+  avatarCircle: { width: 86, height: 86, borderRadius: 28, backgroundColor: '#1E3A8A', borderWidth: 4, borderColor: 'rgba(255,255,255,0.75)', alignItems: 'center', justifyContent: 'center' },
+  avatarImage: { width: 86, height: 86, borderRadius: 28, borderWidth: 4, borderColor: 'rgba(255,255,255,0.75)' },
+  avatarText: { color: '#FFF', fontSize: 30, fontWeight: '900' },
+  cameraBadge: { position: 'absolute', right: -5, bottom: -5, width: 32, height: 32, borderRadius: 12, backgroundColor: '#10B981', borderWidth: 3, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
+  agentName: { color: '#FFF', fontSize: 22, fontWeight: '900' },
+  agentRole: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '700', marginTop: 4 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  heroBadge: { color: '#FFF', fontSize: 10, fontWeight: '900', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999 },
+  scroll: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 95, marginTop: -34 },
+  statsCard: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 24, padding: 16, flexDirection: 'row', gap: 10, shadowColor: '#2563EB', shadowOpacity: 0.1, shadowRadius: 20, elevation: 4 },
+  statBox: { flex: 1, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 12, alignItems: 'center' },
+  statNum: { color: '#0F172A', fontSize: 17, fontWeight: '900' },
+  statLabel: { color: '#64748B', fontSize: 9, fontWeight: '900', marginTop: 3, textTransform: 'uppercase' },
+  sectionTitle: { color: '#334155', fontSize: 11, fontWeight: '900', letterSpacing: 0.7, textTransform: 'uppercase', marginTop: 16, marginBottom: 9, marginLeft: 4 },
+  idCard: { backgroundColor: '#0F172A', borderRadius: 24, padding: 16, flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  idLabel: { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontWeight: '900', marginBottom: 3 },
+  idValue: { color: '#FFF', fontSize: 14, fontWeight: '900', marginBottom: 10 },
+  qrMock: { width: 74, height: 74, borderRadius: 16, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
+  qrText: { color: '#1E3A8A', fontWeight: '900', fontSize: 18 },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  quickAction: { width: '48%', backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  quickIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  quickText: { color: '#0F172A', fontSize: 12, fontWeight: '900', flex: 1 },
+  listCard: { backgroundColor: '#FFF', borderRadius: 22, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  listItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  listIcon: { width: 38, height: 38, borderRadius: 14, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  listTitle: { color: '#0F172A', fontSize: 13, fontWeight: '900' },
+  listSub: { color: '#64748B', fontSize: 11, marginTop: 2 },
+  logoutBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 18, padding: 15, marginTop: 14 },
+  logoutText: { color: '#DC2626', fontWeight: '900' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  sheet: { maxHeight: '78%', backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18 },
+  sheetHandle: { width: 44, height: 5, borderRadius: 999, backgroundColor: '#CBD5E1', alignSelf: 'center', marginBottom: 14 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+  closeBtn: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, marginBottom: 10, backgroundColor: '#FFF' },
+  optionDanger: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  optionIcon: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  optionDangerIcon: { backgroundColor: '#FEE2E2' },
+  optionTitle: { color: '#0F172A', fontSize: 13, fontWeight: '900' },
+  optionSub: { color: '#64748B', fontSize: 11, marginTop: 2, lineHeight: 15 },
+  infoRow: { paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  infoTitle: { color: '#0F172A', fontSize: 13, fontWeight: '900' },
+  infoSub: { color: '#64748B', fontSize: 11, marginTop: 3, lineHeight: 15 },
+  syncGrid: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  syncBox: { flex: 1, backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 18, padding: 14 },
+  syncNum: { color: '#1E3A8A', fontSize: 24, fontWeight: '900' },
+  syncLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginTop: 2 },
+  failedTitle: { color: '#0F172A', fontSize: 13, fontWeight: '900', marginTop: 16, marginBottom: 8 },
+  emptyFailed: { color: '#64748B', fontSize: 12, backgroundColor: '#F8FAFC', borderRadius: 12, padding: 14, textAlign: 'center' },
+  failedEmailCard: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 14, padding: 12, marginBottom: 10 },
+  failedSubject: { color: '#0F172A', fontSize: 12, fontWeight: '900' },
+  failedMeta: { color: '#7F1D1D', fontSize: 10, marginTop: 3 },
+  retryBtn: { backgroundColor: '#2563EB', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 10 },
+  retryText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
 });
