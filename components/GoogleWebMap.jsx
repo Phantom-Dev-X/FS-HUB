@@ -1,18 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import MapLibreGL from '@maplibre/maplibre-react-native';
+import Constants from 'expo-constants';
 
 const FALLBACK_CENTER = { latitude: 6.6018, longitude: 3.3515 };
-
-// One map only for now: Native MapLibre SDK + OpenFreeMap Liberty style.
-// This is not WebView and does not need Google/HERE/Mapbox billing.
-// Later we can swap this style URL to Mapbox/MapTiler/HERE if you provide an API key.
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-try {
-  // MapLibre does not require an access token for open/free styles.
-  MapLibreGL.setAccessToken(null);
-} catch {}
+let MapLibreGL = null;
+if (!IS_EXPO_GO && Platform.OS !== 'web') {
+  try {
+    const module = require('@maplibre/maplibre-react-native');
+    MapLibreGL = module.default || module;
+    MapLibreGL.setAccessToken?.(null);
+  } catch (e) {
+    console.log('[FS-HUB MapLibre Load Error]', e.message);
+  }
+}
 
 const toNumber = (value) => {
   const num = Number(value);
@@ -74,10 +77,16 @@ export default function GoogleWebMap({
     if (onLocationSelected) onLocationSelected(coordinate);
   };
 
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || !MapLibreGL) {
     return (
       <View style={[styles.fallback, { height }]}>
-        <Text style={styles.fallbackTitle}>Native map preview is available in the mobile app.</Text>
+        <Text style={styles.fallbackTitle}>{IS_EXPO_GO ? 'Native MapLibre map needs APK/dev build' : 'Native map unavailable'}</Text>
+        <Text style={styles.fallbackText}>
+          {IS_EXPO_GO
+            ? 'Expo Go cannot load custom native map SDKs. Build/install the APK to test pins and draggable picker.'
+            : 'Map module failed to load on this device.'}
+        </Text>
+        <Text style={styles.fallbackCoords}>Lat {safeCenter.latitude.toFixed(5)} • Lon {safeCenter.longitude.toFixed(5)}</Text>
       </View>
     );
   }
@@ -162,6 +171,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'center',
+  },
+  fallbackText: {
+    color: '#64748B',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 5,
+    lineHeight: 16,
+  },
+  fallbackCoords: {
+    color: '#059669',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 8,
   },
   pin: {
     width: 22,
