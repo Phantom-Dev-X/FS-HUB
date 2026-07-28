@@ -95,6 +95,8 @@ alter table public.fshub_admin_messages add column if not exists priority text d
 alter table public.fshub_admin_messages add column if not exists related_id text;
 alter table public.fshub_admin_messages add column if not exists payload jsonb default '{}'::jsonb;
 alter table public.fshub_admin_messages add column if not exists status text default 'Open';
+alter table public.fshub_admin_messages add column if not exists admin_read boolean default false;
+alter table public.fshub_admin_messages add column if not exists read_at timestamptz;
 alter table public.fshub_admin_messages add column if not exists created_at timestamptz default now();
 
 -- Notifications/replies from admin to exact reps

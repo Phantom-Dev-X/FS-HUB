@@ -170,6 +170,13 @@ function AppStack() {
           <Stack.Screen name="reset-password" />
           <Stack.Screen name="view-receipt" />
           <Stack.Screen name="notifications" />
+          <Stack.Screen name="admin-analytics" />
+          <Stack.Screen name="admin-orders" />
+          <Stack.Screen name="admin-messages" />
+          <Stack.Screen name="admin-reps" />
+          <Stack.Screen name="admin-catalog" />
+          <Stack.Screen name="admin-access" />
+          <Stack.Screen name="admin-more" />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>

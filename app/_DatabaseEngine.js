@@ -558,6 +558,43 @@ export const DatabaseEngine = {
     }
   },
 
+  markAllAdminMessagesRead: async function() {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?admin_read=is.false`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ admin_read: true, read_at: new Date().toISOString() })
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  markAdminMessageRead: async function(messageId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?id=eq.${encodeURIComponent(messageId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ admin_read: true, read_at: new Date().toISOString() })
+      });
+      return { success: response.ok };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
   saveRepNotification: async function(notification) {
     const record = {
       id: notification.id || `NTF-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
