@@ -702,6 +702,22 @@ export const DatabaseEngine = {
     }
   },
 
+  getAllRepNotifications: async function() {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?select=*&order=created_at.desc`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) {
+        console.log(`[All Rep Notifications] Fetch failed ${response.status}: ${await response.text()}`);
+        return [];
+      }
+      return await response.json();
+    } catch (e) {
+      console.log('[All Rep Notifications] Fetch error', e.message);
+      return [];
+    }
+  },
+
   markRepNotificationRead: async function(notificationId) {
     try {
       const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?id=eq.${encodeURIComponent(notificationId)}`, {
