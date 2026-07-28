@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
@@ -46,6 +47,10 @@ export default function ProfileScreen() {
   const [failedEmails, setFailedEmails] = useState([]);
   const [retryingEmailId, setRetryingEmailId] = useState(null);
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
+  const [adminMsgTitle, setAdminMsgTitle] = useState('');
+  const [adminMsgBody, setAdminMsgBody] = useState('');
+  const [adminMsgPriority, setAdminMsgPriority] = useState('Normal');
+  const [sendingAdminMsg, setSendingAdminMsg] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
@@ -148,6 +153,33 @@ export default function ProfileScreen() {
     Alert.alert(result.success ? 'Email Sent' : 'Retry Failed', result.message || 'Done');
   };
 
+  const sendCustomAdminMessage = async () => {
+    if (!adminMsgTitle.trim() || !adminMsgBody.trim()) {
+      Alert.alert('Missing Message', 'Enter a title and message for admin.');
+      return;
+    }
+    setSendingAdminMsg(true);
+    const res = await DatabaseEngine.saveAdminMessage({
+      repId: agent?.id,
+      repName: agent?.name,
+      type: 'rep_custom_message',
+      title: adminMsgTitle.trim(),
+      body: adminMsgBody.trim(),
+      priority: adminMsgPriority,
+      payload: { source: 'profile_message_admin' }
+    });
+    setSendingAdminMsg(false);
+    if (res.success) {
+      setAdminMsgTitle('');
+      setAdminMsgBody('');
+      setAdminMsgPriority('Normal');
+      setModal(null);
+      Alert.alert(res.cloud ? 'Message Sent ✅' : 'Message Saved ✅', res.cloud ? 'Admin will see your message.' : 'Message saved locally. It will need cloud sync/table setup later.');
+    } else {
+      Alert.alert('Message Failed', res.error || 'Could not send message.');
+    }
+  };
+
   const checkForAppUpdate = async () => {
     setCheckingUpdate(true);
     setUpdateMessage('Checking for updates...');
@@ -239,6 +271,7 @@ export default function ProfileScreen() {
           <QuickAction icon="camera-outline" title="Change Photo" onPress={() => setModal('photo')} />
           <QuickAction icon="map-outline" title="My Territory" onPress={() => router.push('/territories')} />
           <QuickAction icon="shield-checkmark-outline" title="Security" onPress={() => setModal('security')} />
+          <QuickAction icon="chatbubble-ellipses-outline" title="Message Admin" onPress={() => setModal('messageAdmin')} />
           <QuickAction icon="cloud-upload-outline" title="Sync Status" onPress={() => setModal('sync')} />
         </View>
 
@@ -259,6 +292,7 @@ export default function ProfileScreen() {
       <ProfileModal visible={Boolean(modal)} title={getModalTitle(modal)} onClose={closeModal}>
         {modal === 'photo' && <PhotoSheet onCamera={() => pickAvatar('camera')} onGallery={() => pickAvatar('gallery')} onRemove={() => { setAvatarUri(null); OrderStore.currentAgent.avatar = null; closeModal(); }} />}
         {modal === 'security' && <SecuritySheet agent={agent} onLogout={handleLogout} />}
+        {modal === 'messageAdmin' && <MessageAdminSheet title={adminMsgTitle} setTitle={setAdminMsgTitle} body={adminMsgBody} setBody={setAdminMsgBody} priority={adminMsgPriority} setPriority={setAdminMsgPriority} sending={sendingAdminMsg} onSubmit={sendCustomAdminMessage} />}
         {modal === 'sync' && <SyncSheet stats={stats} syncing={syncing} onSync={handleSyncNow} checkingUpdate={checkingUpdate} updateAvailable={updateAvailable} installingUpdate={installingUpdate} updateMessage={updateMessage} onCheckUpdate={checkForAppUpdate} onInstallUpdate={installAppUpdate} />}
         {modal === 'appearance' && <AppearanceSheet isDark={isDark} toggleTheme={toggleTheme} prefs={prefs} updatePref={updatePref} />}
         {modal === 'route' && <RoutePrefsSheet prefs={prefs} updatePref={updatePref} />}
@@ -271,6 +305,7 @@ export default function ProfileScreen() {
 const getModalTitle = (modal) => ({
   photo: 'Change Profile Photo',
   security: 'Security & Login',
+  messageAdmin: 'Message Admin',
   sync: 'Sync Status',
   appearance: 'Appearance',
   route: 'Route Preferences',
@@ -303,6 +338,10 @@ function PhotoSheet({ onCamera, onGallery, onRemove }) {
 
 function SecuritySheet({ agent, onLogout }) {
   return <><InfoRow title="Email" sub={agent?.email || 'Not set'} /><InfoRow title="Rep ID" sub={agent?.id || 'REP-GUEST'} /><Option icon="key-outline" title="Reset Password" sub="Open password reset email/OTP flow" onPress={() => router.push('/forgot')} /><Option icon="log-out-outline" title="Sign Out" sub="Clear this device session" danger onPress={onLogout} /></>;
+}
+
+function MessageAdminSheet({ title, setTitle, body, setBody, priority, setPriority, sending, onSubmit }) {
+  return <><Text style={styles.modalInputLabel}>MESSAGE TITLE</Text><TextInput style={styles.modalTextInput} value={title} onChangeText={setTitle} placeholder="e.g. Client issue, stock problem, route request" /><Text style={styles.modalInputLabel}>PRIORITY</Text><View style={styles.priorityRow}>{['Normal', 'Urgent', 'Critical'].map(level => <TouchableOpacity key={level} style={[styles.priorityPill, priority === level && styles.priorityActive]} onPress={() => setPriority(level)}><Text style={[styles.priorityText, priority === level && { color: '#FFF' }]}>{level}</Text></TouchableOpacity>)}</View><Text style={styles.modalInputLabel}>MESSAGE</Text><TextInput style={[styles.modalTextInput, styles.messageBox]} value={body} onChangeText={setBody} multiline textAlignVertical="top" placeholder="Type the exact message you want admin/HQ to see..." /><Option icon="send-outline" title="Send Message to Admin" sub="Saves to Supabase admin messages when table is available" loading={sending} onPress={onSubmit} /></>;
 }
 
 function SyncSheet({ stats, syncing, onSync, checkingUpdate, updateAvailable, installingUpdate, updateMessage, onCheckUpdate, onInstallUpdate }) {
@@ -387,6 +426,13 @@ const styles = StyleSheet.create({
   syncBox: { flex: 1, backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 18, padding: 14 },
   syncNum: { color: '#1E3A8A', fontSize: 24, fontWeight: '900' },
   syncLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginTop: 2 },
+  modalInputLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginTop: 10, marginBottom: 6 },
+  modalTextInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, color: '#0F172A', fontSize: 13 },
+  messageBox: { minHeight: 110 },
+  priorityRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  priorityPill: { flex: 1, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  priorityActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  priorityText: { color: '#64748B', fontSize: 12, fontWeight: '900' },
   updatePanel: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 16, padding: 12, marginTop: 12 },
   updateTitle: { color: '#1E3A8A', fontSize: 13, fontWeight: '900', marginBottom: 4 },
   updateSub: { color: '#64748B', fontSize: 11, lineHeight: 16, marginBottom: 10 },

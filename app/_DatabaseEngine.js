@@ -17,6 +17,7 @@ export const DatabaseEngine = {
 
   KEYS: {
     OFFLINE_ORDERS: '@fshub_offline_orders_only',
+    ADMIN_MESSAGES: '@fshub_admin_messages_pending',
     SESSION: 'fshub_session_rep',
   },
 
@@ -469,6 +470,57 @@ export const DatabaseEngine = {
       const rawClients = await response.json();
       return this._normalizeClients(rawClients);
     } catch { return []; }
+  },
+
+  saveAdminMessage: async function(messageObject) {
+    const message = {
+      id: messageObject.id || `MSG-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      rep_id: messageObject.rep_id || messageObject.repId || 'UNKNOWN',
+      rep_name: messageObject.rep_name || messageObject.repName || 'Field Officer',
+      type: messageObject.type || 'general_message',
+      title: messageObject.title || 'Message to Admin',
+      body: messageObject.body || messageObject.message || '',
+      priority: messageObject.priority || 'Normal',
+      related_id: messageObject.related_id || messageObject.relatedId || '',
+      payload: messageObject.payload || {},
+      status: messageObject.status || 'Open',
+      created_at: messageObject.created_at || new Date().toISOString(),
+    };
+
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(message)
+      });
+      const text = await response.text();
+      if (response.ok) return { success: true, cloud: true, message };
+
+      // Keep messages locally if table is not created yet. This prevents UX errors.
+      console.log(`[Admin Message] Cloud save failed ${response.status}: ${text}`);
+      const current = await this.getPendingAdminMessages();
+      await AsyncStorage.setItem(this.KEYS.ADMIN_MESSAGES, JSON.stringify([message, ...current]));
+      return { success: true, cloud: false, offline: true, warning: `Saved locally. Run SQL repair to create fshub_admin_messages. Supabase: ${response.status}`, message };
+    } catch (e) {
+      const current = await this.getPendingAdminMessages();
+      await AsyncStorage.setItem(this.KEYS.ADMIN_MESSAGES, JSON.stringify([message, ...current]));
+      return { success: true, cloud: false, offline: true, warning: `Saved locally: ${e.message}`, message };
+    }
+  },
+
+  getPendingAdminMessages: async function() {
+    try {
+      const raw = await AsyncStorage.getItem(this.KEYS.ADMIN_MESSAGES);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   },
 
   // CATALOG

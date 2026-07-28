@@ -1,6 +1,6 @@
 // FS HUB INVENTORY - ZERO FAKE, WHITE PREMIUM ELEGANT, FIXED TEXT ERROR
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,12 @@ export default function InventoryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
   const [products, setProducts] = useState([]);
+  const [specProduct, setSpecProduct] = useState(null);
+  const [restockProduct, setRestockProduct] = useState(null);
+  const [restockQty, setRestockQty] = useState('20');
+  const [restockUrgency, setRestockUrgency] = useState('Normal');
+  const [restockNote, setRestockNote] = useState('');
+  const [isSendingRestock, setIsSendingRestock] = useState(false);
 
   const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display & Retail'];
 
@@ -43,12 +49,47 @@ export default function InventoryScreen() {
     return matchesSearch && matchesCat;
   });
 
-  const handleRequestRestock = (productName) => {
-    Alert.alert('📥 Restock Request Sent ✓', `Warehouse dispatcher notified for "${productName}"!`);
+  const handleRequestRestock = (product) => {
+    setRestockProduct(product);
+    setRestockQty(String(Math.max(20, Number(product?.stock || 0) < 10 ? 50 : 20)));
+    setRestockUrgency(Number(product?.stock || 0) <= 5 ? 'Urgent' : 'Normal');
+    setRestockNote('');
   };
 
   const handleViewSpecs = (product) => {
-    Alert.alert(`📋 ${product.name}`, `Barcode: #${product.barcode}\nCategory: ${product.category}\nPrice: ₦${product.price?.toLocaleString()}\nStock: ${product.stock} units`);
+    setSpecProduct(product);
+  };
+
+  const submitRestockRequest = async () => {
+    if (!restockProduct) return;
+    const qty = Number(String(restockQty).replace(/[^0-9]/g, '')) || 0;
+    if (qty <= 0) {
+      Alert.alert('Invalid Quantity', 'Enter the quantity you want warehouse/admin to restock.');
+      return;
+    }
+    setIsSendingRestock(true);
+    const rep = OrderStore.currentAgent || {};
+    const res = await DatabaseEngine.saveAdminMessage({
+      repId: rep.id,
+      repName: rep.name,
+      type: 'restock_request',
+      title: `Restock Request: ${restockProduct.name}`,
+      body: `Please restock ${restockProduct.name}. Requested quantity: ${qty}. Urgency: ${restockUrgency}.${restockNote ? ` Note: ${restockNote}` : ''}`,
+      priority: restockUrgency,
+      relatedId: restockProduct.id,
+      payload: {
+        productId: restockProduct.id,
+        productName: restockProduct.name,
+        barcode: restockProduct.barcode,
+        currentStock: restockProduct.stock,
+        requestedQty: qty,
+        urgency: restockUrgency,
+        note: restockNote,
+      }
+    });
+    setIsSendingRestock(false);
+    setRestockProduct(null);
+    Alert.alert(res.cloud ? 'Request Sent ✅' : 'Saved Locally ✅', res.cloud ? 'Admin/warehouse request has been sent.' : 'Request saved on this device and can be synced when admin message table is ready.');
   };
 
   const handleClearDummyStocks = async () => {
@@ -160,7 +201,7 @@ export default function InventoryScreen() {
                     <Ionicons name="document-text-outline" size={14} color="#2563EB" />
                     <Text style={styles.actionBtnText}> Specs</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionBtn, styles.restockBtn]} onPress={() => handleRequestRestock(item.name)}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.restockBtn]} onPress={() => handleRequestRestock(item)}>
                     <Ionicons name="arrow-up-circle-outline" size={14} color="#FFFFFF" />
                     <Text style={[styles.actionBtnText, { color: '#FFF' }]}> Restock</Text>
                   </TouchableOpacity>
@@ -172,8 +213,91 @@ export default function InventoryScreen() {
 
       </ScrollView>
 
+      <ProductSpecsModal product={specProduct} onClose={() => setSpecProduct(null)} />
+      <RestockRequestModal
+        product={restockProduct}
+        qty={restockQty}
+        setQty={setRestockQty}
+        urgency={restockUrgency}
+        setUrgency={setRestockUrgency}
+        note={restockNote}
+        setNote={setRestockNote}
+        loading={isSendingRestock}
+        onSubmit={submitRestockRequest}
+        onClose={() => setRestockProduct(null)}
+      />
+
       <SmartFooter />
     </SafeAreaView>
+  );
+}
+
+function ProductSpecsModal({ product, onClose }) {
+  if (!product) return null;
+  const price = Number(product.price || product.unit_price || 0);
+  const stock = Number(product.stock || product.warehouse_stock || 0);
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Product Specifications</Text>
+            <TouchableOpacity style={styles.sheetClose} onPress={onClose}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity>
+          </View>
+          <View style={styles.specHero}>
+            <Ionicons name="cube-outline" size={36} color="#2563EB" />
+            <Text style={styles.specName}>{product.name}</Text>
+            <Text style={styles.specCategory}>{product.category || 'Uncategorized'}</Text>
+          </View>
+          <View style={styles.specGrid}>
+            <SpecBox label="Price" value={`₦${price.toLocaleString()}`} color="#059669" />
+            <SpecBox label="Stock" value={`${stock} units`} color={stock < 10 ? '#D97706' : '#2563EB'} />
+            <SpecBox label="Barcode" value={`#${product.barcode || 'N/A'}`} color="#0F172A" />
+            <SpecBox label="Status" value={stock === 0 ? 'Out of Stock' : stock < 10 ? 'Low Stock' : 'In Stock'} color={stock === 0 ? '#DC2626' : stock < 10 ? '#D97706' : '#059669'} />
+          </View>
+          <TouchableOpacity style={styles.primarySheetBtn} onPress={onClose}><Text style={styles.primarySheetBtnText}>Done</Text></TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SpecBox({ label, value, color }) {
+  return <View style={styles.specBox}><Text style={styles.specLabel}>{label}</Text><Text style={[styles.specValue, { color }]} numberOfLines={2}>{value}</Text></View>;
+}
+
+function RestockRequestModal({ product, qty, setQty, urgency, setUrgency, note, setNote, loading, onSubmit, onClose }) {
+  if (!product) return null;
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Restock Request</Text>
+            <TouchableOpacity style={styles.sheetClose} onPress={onClose}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity>
+          </View>
+          <Text style={styles.restockProduct}>{product.name}</Text>
+          <Text style={styles.restockSub}>Current stock: {product.stock} units • #{product.barcode || 'N/A'}</Text>
+          <Text style={styles.inputLabel}>REQUESTED QUANTITY</Text>
+          <TextInput style={styles.modalInput} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="e.g. 50" />
+          <Text style={styles.inputLabel}>URGENCY</Text>
+          <View style={styles.urgencyRow}>
+            {['Normal', 'Urgent', 'Critical'].map(level => (
+              <TouchableOpacity key={level} style={[styles.urgencyPill, urgency === level && styles.urgencyActive]} onPress={() => setUrgency(level)}>
+                <Text style={[styles.urgencyText, urgency === level && { color: '#FFF' }]}>{level}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.inputLabel}>NOTE TO ADMIN / WAREHOUSE</Text>
+          <TextInput style={[styles.modalInput, { minHeight: 78, textAlignVertical: 'top' }]} multiline value={note} onChangeText={setNote} placeholder="e.g. Customer demand is high this week..." />
+          <TouchableOpacity style={[styles.primarySheetBtn, loading && { backgroundColor: '#94A3B8' }]} onPress={onSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primarySheetBtnText}>Send Request to Admin</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -219,4 +343,27 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, flexDirection: 'row', borderWidth: 1, borderColor: '#DBEAFE', backgroundColor: '#EFF6FF', paddingVertical: 10, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   actionBtnText: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
   restockBtn: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18, maxHeight: '82%' },
+  sheetHandle: { width: 44, height: 5, borderRadius: 999, backgroundColor: '#CBD5E1', alignSelf: 'center', marginBottom: 14 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+  sheetClose: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  specHero: { alignItems: 'center', backgroundColor: '#EFF6FF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#DBEAFE', marginBottom: 12 },
+  specName: { color: '#0F172A', fontSize: 17, fontWeight: '900', marginTop: 8, textAlign: 'center' },
+  specCategory: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: 3 },
+  specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  specBox: { width: '48%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 12 },
+  specLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '900', marginBottom: 5 },
+  specValue: { fontSize: 13, fontWeight: '900' },
+  primarySheetBtn: { backgroundColor: '#2563EB', paddingVertical: 15, borderRadius: 14, alignItems: 'center', marginTop: 16 },
+  primarySheetBtnText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
+  restockProduct: { color: '#0F172A', fontSize: 16, fontWeight: '900' },
+  restockSub: { color: '#64748B', fontSize: 12, marginTop: 3, marginBottom: 12 },
+  inputLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginTop: 10, marginBottom: 6 },
+  modalInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, color: '#0F172A', fontSize: 13 },
+  urgencyRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  urgencyPill: { flex: 1, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  urgencyActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  urgencyText: { color: '#64748B', fontSize: 12, fontWeight: '900' },
 });
