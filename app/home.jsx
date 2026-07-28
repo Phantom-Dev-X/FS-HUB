@@ -12,6 +12,7 @@ import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
 import { RouteStore } from './RouteStore';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { CacheEngine } from './_CacheEngine';
 import { useTheme } from '../context/ThemeContext';
 import GoogleWebMap from '../components/GoogleWebMap';
 
@@ -27,17 +28,17 @@ export default function DashboardScreen() {
   const [locationStatus, setLocationStatus] = useState('GPS starting...');
 
   // Keep previous values to avoid 0 flash
-  const [myClientsCount, setMyClientsCount] = useState(0);
-  const [offlineCount, setOfflineCount] = useState(0);
-  const [myOrdersCount, setMyOrdersCount] = useState(0);
+  const [myClientsCount, setMyClientsCount] = useState(null);
+  const [offlineCount, setOfflineCount] = useState(null);
+  const [myOrdersCount, setMyOrdersCount] = useState(null);
   const [agent, setAgent] = useState(OrderStore.currentAgent);
   const [loading, setLoading] = useState(true);
 
   // Persist last good values (prevents flash from 0)
   const lastValues = React.useRef({
-    clients: 0,
-    orders: 0,
-    offline: 0,
+    clients: null,
+    orders: null,
+    offline: null,
   });
 
   const { grandTotal, totalUnits } = OrderStore.getCartSummary();
@@ -86,6 +87,20 @@ export default function DashboardScreen() {
         try {
           const session = await DatabaseEngine.getSession();
           if (session) {
+            const cacheScope = session.id || session.email || 'guest';
+            const cachedHome = await CacheEngine.get('home_stats', cacheScope, null);
+            if (active && cachedHome) {
+              setMyClientsCount(cachedHome.clients ?? null);
+              setMyOrdersCount(cachedHome.orders ?? null);
+              setOfflineCount(cachedHome.offline ?? null);
+              lastValues.current = {
+                clients: cachedHome.clients ?? null,
+                orders: cachedHome.orders ?? null,
+                offline: cachedHome.offline ?? null,
+              };
+              setLoading(false);
+            }
+
             if (active) {
               setAgent({
                 name: session.name?.replace(' (Field Officer)', '') || session.fullName || session.name || 'Field Officer',
@@ -127,6 +142,13 @@ export default function DashboardScreen() {
                 setOfflineCount(offlineCountVal);
                 lastValues.current.offline = offlineCountVal;
               }
+
+              await CacheEngine.set('home_stats', session.id || session.email || 'guest', {
+                clients: clientCount,
+                orders: orderCount,
+                offline: offlineCountVal,
+                savedAt: new Date().toISOString(),
+              });
             }
           } else {
             if (active) {
@@ -195,7 +217,7 @@ export default function DashboardScreen() {
         {/* DASHBOARD TITLE - REAL COUNTS ONLY, NO FAKE 245 */}
         <Text style={styles.dashboardTitle}>FS HUB DASHBOARD</Text>
         <Text style={styles.dashboardSub}>
-          {loading ? 'Loading your workspace...' : `${myClientsCount} clients • ${myOrdersCount} orders • GPS: ${locationStatus}`}
+          {loading && myClientsCount === null ? 'Loading your workspace...' : `${myClientsCount ?? '—'} clients • ${myOrdersCount ?? '—'} orders • GPS: ${locationStatus}`}
         </Text>
 
         {/* 2x2 STATS GRID - REAL DATA ONLY, NO DUMMY +18% OR 245 */}
@@ -205,8 +227,8 @@ export default function DashboardScreen() {
               <View style={styles.statIconBox}><Ionicons name="people" size={18} color="#2563EB" /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.statLabel}>Active Accounts</Text>
-                <Text style={styles.statNumber}>{myClientsCount}</Text>
-                <Text style={styles.statExtra}>{myClientsCount === 0 ? 'No clients yet' : 'Active accounts'}</Text>
+                <Text style={styles.statNumber}>{myClientsCount ?? '—'}</Text>
+                <Text style={styles.statExtra}>{myClientsCount === null ? 'Loading...' : myClientsCount === 0 ? 'No clients yet' : 'Active accounts'}</Text>
               </View>
             </View>
           </View>
@@ -238,8 +260,8 @@ export default function DashboardScreen() {
               <View style={styles.statIconBox}><Ionicons name="sync" size={18} color="#F59E0B" /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.statLabel}>Offline Orders</Text>
-                <Text style={styles.statNumber}>{offlineCount}</Text>
-                <Text style={styles.statExtraMuted}>{offlineCount === 0 ? 'All synced' : 'Pending sync'}</Text>
+                <Text style={styles.statNumber}>{offlineCount ?? '—'}</Text>
+                <Text style={styles.statExtraMuted}>{offlineCount === null ? 'Loading...' : offlineCount === 0 ? 'All synced' : 'Pending sync'}</Text>
               </View>
             </View>
           </View>
@@ -289,7 +311,7 @@ export default function DashboardScreen() {
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/checkin')}>
           <View style={styles.actionIconBox}><Ionicons name="location-outline" size={22} color="#2563EB" /></View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.actionTitle}>Client Check-In ({myClientsCount})</Text>
+            <Text style={styles.actionTitle}>Client Check-In ({myClientsCount ?? '—'})</Text>
             <Text style={styles.actionSub}>Select a client and begin a verified visit</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
@@ -316,7 +338,7 @@ export default function DashboardScreen() {
         <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/sync')}>
           <View style={styles.actionIconBox}><Ionicons name="sync-outline" size={22} color="#A855F7" /></View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.actionTitle}>Sync Offline Orders ({offlineCount})</Text>
+            <Text style={styles.actionTitle}>Sync Offline Orders ({offlineCount ?? '—'})</Text>
             <Text style={styles.actionSub}>Upload pending orders and refresh your field data</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
