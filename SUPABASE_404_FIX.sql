@@ -88,6 +88,35 @@ ALTER TABLE fshub_admins DISABLE ROW LEVEL SECURITY;
 -- CREATE POLICY "Allow all for anon" ON fshub_reps FOR ALL USING (true) WITH CHECK (true);
 -- etc.
 
+-- Messages + notifications tables
+CREATE TABLE IF NOT EXISTS fshub_admin_messages (
+  id TEXT PRIMARY KEY,
+  rep_id TEXT,
+  rep_name TEXT,
+  type TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  priority TEXT DEFAULT 'Normal',
+  related_id TEXT,
+  payload JSONB DEFAULT '{}'::jsonb,
+  status TEXT DEFAULT 'Open',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+);
+CREATE TABLE IF NOT EXISTS fshub_rep_notifications (
+  id TEXT PRIMARY KEY,
+  rep_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  type TEXT DEFAULT 'admin_reply',
+  related_id TEXT,
+  read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fshub_admin_messages TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fshub_rep_notifications TO anon, authenticated;
+ALTER TABLE fshub_admin_messages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE fshub_rep_notifications DISABLE ROW LEVEL SECURITY;
+
 -- Insert primary admin if not exists
 ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE fshub_admins ADD COLUMN IF NOT EXISTS auth_user_id UUID;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
-  TextInput, Alert, Platform, Switch, ActivityIndicator
+  TextInput, Alert, Platform, Switch, ActivityIndicator, Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -59,9 +59,28 @@ const mapSupabaseOrderForAdmin = (order) => {
   };
 };
 
+function AdminNavPill({ label, emoji, active, color, onPress }) {
+  return (
+    <TouchableOpacity style={[styles.adminNavPill, active && { backgroundColor: color, borderColor: color }]} onPress={onPress}>
+      <Text style={styles.adminNavEmoji}>{emoji}</Text>
+      <Text style={[styles.adminNavText, active && { color: '#FFFFFF' }]} numberOfLines={1}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function OverviewMetric({ emoji, label, value, color }) {
+  return (
+    <View style={styles.overviewMetric}>
+      <View style={[styles.overviewIcon, { backgroundColor: `${color}22` }]}><Text>{emoji}</Text></View>
+      <Text style={styles.overviewValue}>{value}</Text>
+      <Text style={styles.overviewLabel}>{label}</Text>
+    </View>
+  );
+}
+
 export default function AdminDashboardScreen() {
   const { isDark, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState('ORDERS'); // 'ORDERS' | 'REPS' | 'CATALOG' | 'ADMINS'
+  const [activeTab, setActiveTab] = useState('OVERVIEW'); // OVERVIEW | ORDERS | MESSAGES | REPS | CATALOG | ADMINS
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(null);
 
@@ -69,6 +88,10 @@ export default function AdminDashboardScreen() {
   const [incomingOrders, setIncomingOrders] = useState([]);
   const [activeReps, setActiveReps] = useState([]);
   const [catalogItems, setCatalogItems] = useState([]);
+  const [adminMessages, setAdminMessages] = useState([]);
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
   // Look right right here: 100% ZERO FAKE ADMINS!
   // ONLY `peterpatrick@gmail.com` sits right here as Primary Super Admin!
@@ -108,11 +131,19 @@ export default function AdminDashboardScreen() {
     return mappedOrders;
   };
 
+  const loadAdminMessages = async () => {
+    const messages = await DatabaseEngine.getAdminMessages();
+    const sorted = (Array.isArray(messages) ? messages : []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    setAdminMessages(sorted);
+    return sorted;
+  };
+
   const loadAdminDashboardData = async () => {
     const [catalogData, repsData] = await Promise.all([
       DatabaseEngine.getCatalog(),
       DatabaseEngine.getAllReps(),
       loadIncomingOrders(),
+      loadAdminMessages(),
     ]);
 
     setCatalogItems(catalogData);
@@ -147,6 +178,12 @@ export default function AdminDashboardScreen() {
     purple:     isDark ? '#A855F7' : '#9333EA',
     red:        '#EF4444',
   };
+
+  const todayOrders = incomingOrders.filter(order => {
+    const created = new Date(order.raw?.created_at || order.raw?.createdAt || 0);
+    return !Number.isNaN(created.getTime()) && created.toDateString() === new Date().toDateString();
+  });
+  const openMessagesCount = adminMessages.filter(msg => String(msg.status || 'Open').toLowerCase() !== 'closed').length;
 
   const handleTestSupabaseConnection = async () => {
     setIsTestingSupabase(true);
@@ -383,6 +420,61 @@ export default function AdminDashboardScreen() {
     );
   };
 
+  const sendNotificationToRep = async ({ message, title, body, status }) => {
+    const repId = message?.rep_id || message?.repId;
+    if (!repId) {
+      Alert.alert('Missing Rep ID', 'This message has no rep_id, so admin cannot send a direct reply.');
+      return { success: false };
+    }
+    const notification = await DatabaseEngine.saveRepNotification({
+      repId,
+      title,
+      body,
+      type: 'admin_reply',
+      relatedId: message.id,
+    });
+    if (!notification.success) {
+      Alert.alert('Reply Failed', notification.error || 'Could not send notification to rep. Run SQL repair for fshub_rep_notifications.');
+      return { success: false };
+    }
+    if (status) await DatabaseEngine.updateAdminMessageStatus(message.id, status);
+    await loadAdminMessages();
+    return { success: true };
+  };
+
+  const handleMarkMessageInProgress = async (message) => {
+    const defaultBody = `HQ has received your ${message.type === 'restock_request' ? 'restock request' : 'message'} and marked it as In Progress. We will update you soon.`;
+    const sent = await sendNotificationToRep({
+      message,
+      title: `In Progress: ${message.title}`,
+      body: defaultBody,
+      status: 'In Progress'
+    });
+    if (sent.success) Alert.alert('Marked In Progress', `Default reply sent to ${message.rep_id}.`);
+  };
+
+  const openReplyModal = (message) => {
+    setReplyTarget(message);
+    setReplyText(`Hello ${message.rep_name || message.rep_id || 'Officer'},\n\n`);
+  };
+
+  const submitReply = async () => {
+    if (!replyTarget || !replyText.trim()) return;
+    setSendingReply(true);
+    const sent = await sendNotificationToRep({
+      message: replyTarget,
+      title: `Reply: ${replyTarget.title}`,
+      body: replyText.trim(),
+      status: 'Replied'
+    });
+    setSendingReply(false);
+    if (sent.success) {
+      setReplyTarget(null);
+      setReplyText('');
+      Alert.alert('Reply Sent', `Reply sent to ${replyTarget.rep_id}.`);
+    }
+  };
+
   const handleToggleSuperAdmin = (adminObj) => {
     if (adminObj.isPrimary) {
       Alert.alert('⚠️ Primary Super Admin', 'Mr. Peter Patrick already holds maximum Primary Super Admin authority across all cloud servers.');
@@ -449,47 +541,71 @@ export default function AdminDashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 4 Admin Tabs */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'ORDERS' && { backgroundColor: colors.amber }]}
-            onPress={() => setActiveTab('ORDERS')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'ORDERS' ? '#FFF' : colors.subText }]} numberOfLines={1}>
-              📦 Orders ({incomingOrders.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'REPS' && { backgroundColor: colors.cyan }]}
-            onPress={() => setActiveTab('REPS')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'REPS' ? '#FFF' : colors.subText }]} numberOfLines={1}>
-              📍 Reps ({activeReps.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'CATALOG' && { backgroundColor: colors.green }]}
-            onPress={() => setActiveTab('CATALOG')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'CATALOG' ? '#FFF' : colors.subText }]} numberOfLines={1}>
-              🏬 Stock ({catalogItems.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabPill, activeTab === 'ADMINS' && { backgroundColor: colors.purple }]}
-            onPress={() => setActiveTab('ADMINS')}
-          >
-            <Text style={[styles.tabText, { color: activeTab === 'ADMINS' ? '#FFF' : colors.subText }]} numberOfLines={1}>
-              🛡️ Admins ({adminList.length})
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.adminNavGrid}>
+          <AdminNavPill label="Overview" emoji="🏢" active={activeTab === 'OVERVIEW'} color={colors.cyan} onPress={() => setActiveTab('OVERVIEW')} />
+          <AdminNavPill label={`Orders ${todayOrders.length}`} emoji="📦" active={activeTab === 'ORDERS'} color={colors.amber} onPress={() => setActiveTab('ORDERS')} />
+          <AdminNavPill label={`Messages ${openMessagesCount}`} emoji="💬" active={activeTab === 'MESSAGES'} color={colors.purple} onPress={() => setActiveTab('MESSAGES')} />
+          <AdminNavPill label={`Reps ${activeReps.length}`} emoji="📍" active={activeTab === 'REPS'} color={colors.cyan} onPress={() => setActiveTab('REPS')} />
+          <AdminNavPill label={`Stock ${catalogItems.length}`} emoji="🏬" active={activeTab === 'CATALOG'} color={colors.green} onPress={() => setActiveTab('CATALOG')} />
+          <AdminNavPill label="Access" emoji="🛡️" active={activeTab === 'ADMINS'} color={colors.purple} onPress={() => setActiveTab('ADMINS')} />
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+
+        {activeTab === 'OVERVIEW' && (
+          <View>
+            <Text style={[styles.sectionHeading, { color: colors.mainText }]}>📊 TODAY'S COMMAND CENTER</Text>
+            <View style={styles.overviewGrid}>
+              <OverviewMetric emoji="📦" label="Today Orders" value={todayOrders.length} color="#F59E0B" />
+              <OverviewMetric emoji="💬" label="Open Messages" value={openMessagesCount} color="#A855F7" />
+              <OverviewMetric emoji="📍" label="Reps" value={activeReps.length} color="#2563EB" />
+              <OverviewMetric emoji="🏬" label="Products" value={catalogItems.length} color="#10B981" />
+            </View>
+            <Text style={[styles.sectionHeading, { color: colors.mainText, marginTop: 10 }]}>⚡ QUICK ADMIN ACTIONS</Text>
+            <View style={[styles.adminCreatorCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TouchableOpacity style={styles.overviewAction} onPress={() => setActiveTab('MESSAGES')}><Text style={styles.overviewActionText}>💬 Open Messages & Requests ({openMessagesCount})</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.overviewAction} onPress={() => setActiveTab('ORDERS')}><Text style={styles.overviewActionText}>📦 Review Today Orders ({todayOrders.length})</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.overviewAction} onPress={() => setActiveTab('CATALOG')}><Text style={styles.overviewActionText}>🏬 Manage Catalog & Stock</Text></TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {activeTab === 'MESSAGES' && (
+          <View>
+            <Text style={[styles.sectionHeading, { color: colors.purple }]}>💬 MESSAGES & REQUESTS FROM FIELD REPS</Text>
+            <TouchableOpacity
+              style={[styles.testSupabaseBtn, { alignSelf: 'flex-start', marginBottom: 12 }]}
+              onPress={async () => {
+                const refreshed = await loadAdminMessages();
+                Alert.alert('Messages Refreshed', `Loaded ${refreshed.length} message(s).`);
+              }}
+            >
+              <Text style={styles.testSupabaseText}>🔄 REFRESH MESSAGES</Text>
+            </TouchableOpacity>
+            {adminMessages.length === 0 ? (
+              <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={{ fontSize: 38, marginBottom: 8 }}>💬</Text>
+                <Text style={[styles.emptyTitle, { color: colors.mainText }]}>No Messages Yet</Text>
+                <Text style={[styles.emptySub, { color: colors.subText }]}>Custom rep messages and restock requests will appear here.</Text>
+              </View>
+            ) : adminMessages.map(message => (
+              <View key={message.id} style={[styles.messageCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: message.priority === 'Critical' ? '#EF4444' : message.priority === 'Urgent' ? '#F59E0B' : '#2563EB' }]}>
+                <View style={styles.cardTopRow}>
+                  <Text style={[styles.storeTitle, { color: colors.mainText, flex: 1 }]} numberOfLines={1}>{message.title}</Text>
+                  <View style={[styles.statusBadge, { borderColor: message.priority === 'Critical' ? '#EF4444' : '#F59E0B' }]}><Text style={[styles.statusText, { color: message.priority === 'Critical' ? '#EF4444' : '#F59E0B' }]}>{message.priority || 'Normal'}</Text></View>
+                </View>
+                <Text style={[styles.repTitle, { color: colors.cyan }]}>👤 {message.rep_name || 'Field Officer'} • {message.rep_id || 'UNKNOWN'} • {message.type || 'message'}</Text>
+                <Text style={[styles.messageBody, { color: colors.subText }]}>{message.body}</Text>
+                <Text style={[styles.repStatusText, { color: colors.subText }]}>Status: {message.status || 'Open'} • {message.created_at ? new Date(message.created_at).toLocaleString() : 'Now'}</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <TouchableOpacity style={[styles.smallAdminBtn, { backgroundColor: 'rgba(37,99,235,0.14)', borderWidth: 1, borderColor: '#2563EB' }]} onPress={() => openReplyModal(message)}><Text style={{ color: '#2563EB', fontSize: 11, fontWeight: '900' }}>Reply</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.smallAdminBtn, { backgroundColor: 'rgba(245,158,11,0.14)', borderWidth: 1, borderColor: '#F59E0B' }]} onPress={() => handleMarkMessageInProgress(message)}><Text style={{ color: '#D97706', fontSize: 11, fontWeight: '900' }}>Mark In Progress</Text></TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* TAB 1: LIVE INCOMING FIELD ORDERS */}
         {activeTab === 'ORDERS' && (
@@ -508,14 +624,14 @@ export default function AdminDashboardScreen() {
               <Text style={styles.testSupabaseText}>🔄 REFRESH SUPABASE ORDERS</Text>
             </TouchableOpacity>
 
-            {incomingOrders.length === 0 ? (
+            {todayOrders.length === 0 ? (
               <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={{ fontSize: 38, marginBottom: 8 }}>📦</Text>
                 <Text style={[styles.emptyTitle, { color: colors.mainText }]}>Clean Production Order Queue</Text>
-                <Text style={[styles.emptySub, { color: colors.subText }]}>No pending field orders. Orders appear live right right here the moment field reps tap `Submit Order` on checkout!</Text>
+                <Text style={[styles.emptySub, { color: colors.subText }]}>No orders submitted today. Today's field orders appear here after reps submit/sync checkout.</Text>
               </View>
             ) : (
-              incomingOrders.map((order) => (
+              todayOrders.map((order) => (
                 <View key={order.id} style={[styles.orderCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: order.statusColor }]}>
                   <View style={styles.cardTopRow}>
                     <Text style={[styles.orderIdText, { color: colors.cyan }]}>#{order.id}</Text>
@@ -604,7 +720,7 @@ export default function AdminDashboardScreen() {
                 // Only show "Online today" if the rep actually logged in today
                 const lastLogin = rep.lastLogin || rep.updated_at || '';
                 const isOnlineToday = lastLogin && new Date(lastLogin).toDateString() === new Date().toDateString();
-                
+
                 return (
                   <View key={String(rep.id || rep.email || Math.random())} style={[styles.repCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardTopRow}>
@@ -855,6 +971,31 @@ export default function AdminDashboardScreen() {
         )}
 
       </ScrollView>
+
+      <Modal visible={Boolean(replyTarget)} transparent animationType="slide" onRequestClose={() => setReplyTarget(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.replySheet, { backgroundColor: colors.card }]}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.mainText }]}>Reply to {replyTarget?.rep_id || 'Rep'}</Text>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => setReplyTarget(null)}><Text style={{ color: '#64748B', fontWeight: '900' }}>×</Text></TouchableOpacity>
+            </View>
+            <Text style={[styles.inputLabel, { color: colors.subText }]}>MESSAGE</Text>
+            <TextInput
+              style={[styles.replyInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]}
+              multiline
+              textAlignVertical="top"
+              value={replyText}
+              onChangeText={setReplyText}
+              placeholder="Type admin reply..."
+              placeholderTextColor="#64748B"
+            />
+            <TouchableOpacity style={[styles.createAdminBtn, sendingReply && { backgroundColor: '#64748B' }]} onPress={submitReply} disabled={sendingReply}>
+              {sendingReply ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.createAdminBtnText}>SEND REPLY TO EXACT REP ✓</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -907,6 +1048,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  adminNavGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  adminNavPill: {
+    width: '31.8%',
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 7,
+  },
+  adminNavEmoji: {
+    fontSize: 15,
+    marginBottom: 2,
+  },
+  adminNavText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
   adminSub: {
     fontSize: 11,
     flexShrink: 1,
@@ -950,6 +1118,57 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
   },
+  overviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  overviewMetric: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  overviewIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  overviewValue: {
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  overviewLabel: {
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  overviewAction: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 8,
+  },
+  overviewActionText: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '900',
+  },
   orderCard: {
     borderRadius: 16,
     padding: 16,
@@ -957,6 +1176,19 @@ const styles = StyleSheet.create({
     borderLeftWidth: 6,
     marginBottom: 14,
     elevation: 3,
+  },
+  messageCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderLeftWidth: 6,
+    marginBottom: 14,
+    elevation: 3,
+  },
+  messageBody: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
   },
   cardTopRow: {
     flexDirection: 'row',
@@ -1164,6 +1396,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  replySheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18, maxHeight: '78%' },
+  sheetHandle: { width: 44, height: 5, borderRadius: 999, backgroundColor: '#CBD5E1', alignSelf: 'center', marginBottom: 14 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitle: { fontSize: 18, fontWeight: '900' },
+  sheetClose: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  replyInput: { borderWidth: 1, borderRadius: 12, padding: 12, minHeight: 140, fontSize: 13 },
   emptyBox: {
     borderRadius: 16,
     padding: 24,

@@ -97,6 +97,25 @@ alter table public.fshub_admin_messages add column if not exists payload jsonb d
 alter table public.fshub_admin_messages add column if not exists status text default 'Open';
 alter table public.fshub_admin_messages add column if not exists created_at timestamptz default now();
 
+-- Notifications/replies from admin to exact reps
+create table if not exists public.fshub_rep_notifications (
+  id text primary key,
+  rep_id text not null,
+  title text not null,
+  body text not null,
+  type text default 'admin_reply',
+  related_id text,
+  read boolean default false,
+  created_at timestamptz default now()
+);
+alter table public.fshub_rep_notifications add column if not exists rep_id text;
+alter table public.fshub_rep_notifications add column if not exists title text;
+alter table public.fshub_rep_notifications add column if not exists body text;
+alter table public.fshub_rep_notifications add column if not exists type text default 'admin_reply';
+alter table public.fshub_rep_notifications add column if not exists related_id text;
+alter table public.fshub_rep_notifications add column if not exists read boolean default false;
+alter table public.fshub_rep_notifications add column if not exists created_at timestamptz default now();
+
 -- Catalog
 create table if not exists public.fshub_catalog (
   id text primary key,
@@ -160,6 +179,7 @@ grant select, insert, update, delete on table public.fshub_orders to anon, authe
 grant select, insert, update, delete on table public.fshub_admins to anon, authenticated;
 grant select, insert, update, delete on table public.fshub_checkins to anon, authenticated;
 grant select, insert, update, delete on table public.fshub_admin_messages to anon, authenticated;
+grant select, insert, update, delete on table public.fshub_rep_notifications to anon, authenticated;
 
 -- Private media bucket. The database stores paths; image bytes belong in Storage.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -187,6 +207,7 @@ alter table public.fshub_orders disable row level security;
 alter table public.fshub_admins disable row level security;
 alter table public.fshub_checkins disable row level security;
 alter table public.fshub_admin_messages disable row level security;
+alter table public.fshub_rep_notifications disable row level security;
 
 insert into public.fshub_admins (id, name, email, role, is_primary, is_super, password)
 values ('ADM-001', 'Peter Patrick', 'peterpatrick@gmail.com', 'Primary Super Admin', true, true, 'fshubadmin')

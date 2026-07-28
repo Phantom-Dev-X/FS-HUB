@@ -183,7 +183,10 @@ export default function DashboardScreen() {
               <Text style={styles.agentName} numberOfLines={1}>{agent?.name || 'Guest Officer'}</Text>
               <Text style={styles.agentRole} numberOfLines={1}>{agent?.id ? `${agent.id} • ${agent.territory}` : 'No session - Please login'}</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/profile')} style={styles.gearBtn}>
+            <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.gearBtn}>
+              <Ionicons name="notifications-outline" size={20} color="#2563EB" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/profile')} style={[styles.gearBtn, { marginLeft: 8 }]}>
               <Ionicons name="settings-outline" size={20} color="#64748B" />
             </TouchableOpacity>
           </View>

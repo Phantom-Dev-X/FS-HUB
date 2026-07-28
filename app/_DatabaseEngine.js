@@ -523,6 +523,104 @@ export const DatabaseEngine = {
     }
   },
 
+  getAdminMessages: async function() {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?select=*&order=created_at.desc`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) {
+        console.log(`[Admin Messages] Fetch failed ${response.status}: ${await response.text()}`);
+        return await this.getPendingAdminMessages();
+      }
+      return await response.json();
+    } catch (e) {
+      console.log('[Admin Messages] Fetch error', e.message);
+      return await this.getPendingAdminMessages();
+    }
+  },
+
+  updateAdminMessageStatus: async function(messageId, status) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_admin_messages?id=eq.${encodeURIComponent(messageId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ status })
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  saveRepNotification: async function(notification) {
+    const record = {
+      id: notification.id || `NTF-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      rep_id: notification.rep_id || notification.repId || 'UNKNOWN',
+      title: notification.title || 'Admin Notification',
+      body: notification.body || notification.message || '',
+      type: notification.type || 'admin_reply',
+      related_id: notification.related_id || notification.relatedId || '',
+      read: false,
+      created_at: notification.created_at || new Date().toISOString(),
+    };
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(record)
+      });
+      const text = await response.text();
+      return response.ok ? { success: true, notification: record } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  getRepNotifications: async function(repId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?select=*&rep_id=eq.${encodeURIComponent(repId)}&order=created_at.desc`, {
+        headers: { 'apikey': this.supabaseConfig.anonKey, 'Authorization': `Bearer ${this.supabaseConfig.anonKey}` }
+      });
+      if (!response.ok) {
+        console.log(`[Rep Notifications] Fetch failed ${response.status}: ${await response.text()}`);
+        return [];
+      }
+      return await response.json();
+    } catch (e) {
+      console.log('[Rep Notifications] Fetch error', e.message);
+      return [];
+    }
+  },
+
+  markRepNotificationRead: async function(notificationId) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}/fshub_rep_notifications?id=eq.${encodeURIComponent(notificationId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ read: true })
+      });
+      return { success: response.ok };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // CATALOG
   getCatalog: async function() {
     try {

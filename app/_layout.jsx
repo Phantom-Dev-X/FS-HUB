@@ -169,6 +169,7 @@ function AppStack() {
           <Stack.Screen name="sync" />
           <Stack.Screen name="reset-password" />
           <Stack.Screen name="view-receipt" />
+          <Stack.Screen name="notifications" />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>
