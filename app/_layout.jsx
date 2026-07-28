@@ -168,6 +168,7 @@ function AppStack() {
           <Stack.Screen name="signup" />
           <Stack.Screen name="sync" />
           <Stack.Screen name="reset-password" />
+          <Stack.Screen name="view-receipt" />
         </Stack>
       </ThemeProvider>
     </SafeAreaProvider>

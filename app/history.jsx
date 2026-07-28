@@ -1,6 +1,6 @@
 // HISTORY - ZERO FAKE, WHITE PREMIUM, FIXED TEXT ERROR
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -126,6 +126,8 @@ export default function HistoryScreen() {
               gpsPrecision: o.geotag_lat_lon || o.gpsVerified || 'No GPS recorded',
               statusColor: isOffline ? '#F59E0B' : '#10B981',
               receiptNo,
+              localTimestamp: o.localTimestamp || '',
+              source: isOffline ? 'offline' : 'cloud',
             };
           }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -157,7 +159,14 @@ export default function HistoryScreen() {
   });
 
   const handleViewReceipt = (log) => {
-    Alert.alert(`📄 Log #${log.receiptNo}`, `Client: ${log.clientName}\nType: ${log.type}\nDate: ${log.date}\nAmount: ${log.amount}\nGeotag: ${log.gpsPrecision}`);
+    router.push({
+      pathname: '/view-receipt',
+      params: {
+        receiptNo: log.receiptNo,
+        source: log.source || '',
+        localTimestamp: log.localTimestamp || '',
+      }
+    });
   };
 
   return (
