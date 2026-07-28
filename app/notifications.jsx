@@ -111,22 +111,6 @@ export default function NotificationsScreen() {
     }, 50);
   };
 
-  const deleteThread = async (threadId) => {
-    Alert.alert('Delete Thread?', 'This deletes the full conversation from the database for rep and admin.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete Thread',
-        style: 'destructive',
-        onPress: async () => {
-          const result = await DatabaseEngine.deleteMessageThread(threadId);
-          if (!result.success) return Alert.alert('Delete Failed', result.error || 'Could not delete thread from database.');
-          setSelectedThread(null);
-          await loadNotifications();
-        }
-      }
-    ]);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']} style={styles.topGradient} />
@@ -194,7 +178,6 @@ export default function NotificationsScreen() {
               <TouchableOpacity style={styles.sendBtn} onPress={sendReplyToAdmin} disabled={sendingReply || !replyBody.trim()}>
                 {sendingReply ? <ActivityIndicator color="#FFF" /> : <Text style={styles.sendText}>Send Reply</Text>}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => selectedThread && deleteThread(selectedThread.threadId)}><Text style={styles.deleteText}>Delete Thread</Text></TouchableOpacity>
             </View>
           </View>
         </View>
