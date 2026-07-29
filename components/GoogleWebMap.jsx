@@ -1,28 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
+import { WebView } from 'react-native-webview';
 
 const FALLBACK_CENTER = { latitude: 6.6018, longitude: 3.3515 };
-const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
-const IS_EXPO_GO = Constants.appOwnership === 'expo';
-
-let MapLibreGL = null;
-if (!IS_EXPO_GO && Platform.OS !== 'web') {
-  try {
-    const module = require('@maplibre/maplibre-react-native');
-    MapLibreGL = module.default || module;
-    MapLibreGL.setAccessToken?.(null);
-  } catch (e) {
-    console.log('[FS-HUB MapLibre Load Error]', e.message);
-  }
-}
-
-const hasNativeMapComponents = () => Boolean(
-  MapLibreGL &&
-  MapLibreGL.MapView &&
-  MapLibreGL.Camera &&
-  MapLibreGL.PointAnnotation
-);
 
 const toNumber = (value) => {
   const num = Number(value);
@@ -53,17 +33,6 @@ const normalizeMarkers = (markers = []) => markers
   })
   .filter(Boolean);
 
-const toMapLibreCoordinate = (coordinate) => [coordinate.longitude, coordinate.latitude];
-
-const readMapPressCoordinate = (event) => {
-  const coords = event?.geometry?.coordinates || event?.features?.[0]?.geometry?.coordinates || event?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-  const longitude = toNumber(coords[0]);
-  const latitude = toNumber(coords[1]);
-  if (latitude === null || longitude === null) return null;
-  return { latitude, longitude, accuracy: null };
-};
-
 export default function GoogleWebMap({
   center = FALLBACK_CENTER,
   markers = [],
@@ -73,160 +42,137 @@ export default function GoogleWebMap({
   draggablePicker = false,
   onLocationSelected,
 }) {
-  const [pickerCoordinate, setPickerCoordinate] = useState(normalizeCoordinate(center) || FALLBACK_CENTER);
+  const [hasError, setHasError] = useState(false);
   const safeCenter = normalizeCoordinate(center) || FALLBACK_CENTER;
   const safeMarkers = useMemo(() => normalizeMarkers(markers), [markers]);
-  const selectedCoordinate = draggablePicker ? pickerCoordinate : safeCenter;
 
-  const handleSelectCoordinate = (coordinate) => {
-    if (!coordinate) return;
-    setPickerCoordinate(coordinate);
-    if (onLocationSelected) onLocationSelected(coordinate);
-  };
+  const html = useMemo(() => {
+    const markerJson = JSON.stringify(safeMarkers).replace(/</g, '\\u003c');
+    const escapedLabel = String(label).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/`/g, '');
 
-  if (Platform.OS === 'web' || !hasNativeMapComponents()) {
+    // Stability fallback: WebView + Leaflet. This avoids native SDK element errors
+    // while still supporting pins and tap/drag picker. No MapLibre native imports.
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body, #map { height:100%; width:100%; margin:0; padding:0; background:#EFF6FF; }
+    .leaflet-popup-content { font-family: Arial, sans-serif; font-size:12px; line-height:16px; }
+    .pin { width:20px; height:20px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:2px solid white; box-shadow:0 2px 7px rgba(0,0,0,.35); }
+    .pin-inner { width:6px; height:6px; background:white; border-radius:50%; margin:5px; }
+    .pin-wrap { transform: rotate(45deg); }
+    .picker-help { position:absolute; left:10px; right:10px; bottom:10px; z-index:999; background:rgba(15,23,42,.88); color:white; border-radius:12px; padding:9px 11px; font-family:Arial; font-size:12px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  ${draggablePicker ? '<div class="picker-help">Tap map or drag blue pin to select exact store location</div>' : ''}
+  <script>
+    const center = [${safeCenter.latitude}, ${safeCenter.longitude}];
+    const markers = ${markerJson};
+    const draggablePicker = ${draggablePicker ? 'true' : 'false'};
+    const map = L.map('map', { zoomControl:true, attributionControl:false }).setView(center, ${Number(zoom) || 14});
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri, HERE, Garmin, OpenStreetMap contributors'
+    }).addTo(map);
+
+    function icon(color) {
+      return L.divIcon({
+        className: '',
+        html: '<div class="pin-wrap"><div class="pin" style="background:' + color + '"><div class="pin-inner"></div></div></div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 26],
+        popupAnchor: [0, -24]
+      });
+    }
+
+    const allPoints = [];
+    function addMarker(lat, lon, title, desc, color, draggable) {
+      const point = [lat, lon];
+      allPoints.push(point);
+      const marker = L.marker(point, { icon: icon(color), draggable: !!draggable }).addTo(map);
+      marker.bindPopup('<b>' + title + '</b>' + (desc ? '<br/>' + desc : ''));
+      return marker;
+    }
+
+    let picker = addMarker(center[0], center[1], '${escapedLabel}', draggablePicker ? 'Drag or tap map to select' : 'Map center', '#2563EB', draggablePicker);
+
+    function sendLocation(latlng) {
+      if (!window.ReactNativeWebView) return;
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type:'location', latitude: latlng.lat, longitude: latlng.lng }));
+    }
+
+    if (draggablePicker) {
+      picker.on('dragend', function(e) { sendLocation(e.target.getLatLng()); });
+      map.on('click', function(e) { picker.setLatLng(e.latlng); sendLocation(e.latlng); });
+    }
+
+    markers.forEach(function(m) {
+      addMarker(m.latitude, m.longitude, m.title, m.description, m.color || '#EF4444', false);
+    });
+
+    if (allPoints.length > 1) {
+      map.fitBounds(allPoints, { padding:[34, 34], maxZoom:15 });
+    }
+  </script>
+</body>
+</html>`;
+  }, [safeCenter.latitude, safeCenter.longitude, safeMarkers, zoom, label, draggablePicker]);
+
+  if (Platform.OS === 'web') {
     return (
       <View style={[styles.fallback, { height }]}>
-        <Text style={styles.fallbackTitle}>{IS_EXPO_GO ? 'Native MapLibre map needs APK/dev build' : 'Native map unavailable'}</Text>
-        <Text style={styles.fallbackText}>
-          {IS_EXPO_GO
-            ? 'Expo Go cannot load custom native map SDKs. Build/install the APK to test pins and draggable picker.'
-            : 'Map module failed to load on this device.'}
-        </Text>
+        <Text style={styles.fallbackTitle}>Map preview is available in the mobile app.</Text>
+      </View>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <View style={[styles.fallback, { height }]}>
+        <Text style={styles.fallbackTitle}>Map could not load</Text>
+        <Text style={styles.fallbackText}>Check internet connection and try again.</Text>
         <Text style={styles.fallbackCoords}>Lat {safeCenter.latitude.toFixed(5)} • Lon {safeCenter.longitude.toFixed(5)}</Text>
       </View>
     );
   }
 
-  const NativeMapView = MapLibreGL.MapView;
-  const NativeCamera = MapLibreGL.Camera;
-  const NativePointAnnotation = MapLibreGL.PointAnnotation;
-
   return (
     <View style={[styles.wrapper, { height }]}>
-      <NativeMapView
-        style={styles.map}
-        styleURL={MAP_STYLE_URL}
-        logoEnabled={false}
-        attributionEnabled={false}
-        compassEnabled
-        onPress={(event) => {
-          if (!draggablePicker) return;
-          handleSelectCoordinate(readMapPressCoordinate(event));
+      <WebView
+        originWhitelist={['*']}
+        source={{ html, baseUrl: 'https://cdn.jsdelivr.net/' }}
+        javaScriptEnabled
+        domStorageEnabled
+        geolocationEnabled
+        mixedContentMode="always"
+        setSupportMultipleWindows={false}
+        onMessage={(event) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'location' && onLocationSelected) {
+              onLocationSelected({ latitude: Number(data.latitude), longitude: Number(data.longitude), accuracy: null });
+            }
+          } catch {}
         }}
-      >
-        <NativeCamera
-          centerCoordinate={toMapLibreCoordinate(selectedCoordinate)}
-          zoomLevel={Number(zoom) || 14}
-          animationMode="flyTo"
-          animationDuration={450}
-        />
-
-        {safeMarkers.map(marker => (
-          <NativePointAnnotation
-            key={marker.id}
-            id={marker.id}
-            coordinate={[marker.longitude, marker.latitude]}
-            title={marker.title}
-          >
-            <View style={[styles.pin, { backgroundColor: marker.color }]}>
-              <View style={styles.pinDot} />
-            </View>
-          </NativePointAnnotation>
-        ))}
-
-        <NativePointAnnotation
-          id="fshub-center-pin"
-          coordinate={toMapLibreCoordinate(selectedCoordinate)}
-          title={label}
-          draggable={Boolean(draggablePicker)}
-          onDragEnd={(event) => handleSelectCoordinate(readMapPressCoordinate(event))}
-        >
-          <View style={[styles.pin, { backgroundColor: '#2563EB' }]}>
-            <View style={styles.pinDot} />
-          </View>
-        </NativePointAnnotation>
-      </NativeMapView>
-
-      {draggablePicker && (
-        <View style={styles.helpBox} pointerEvents="none">
-          <Text style={styles.helpText}>Tap map or drag blue pin to select exact store location</Text>
-        </View>
-      )}
+        onError={() => setHasError(true)}
+        onHttpError={() => setHasError(true)}
+        style={styles.webview}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    width: '100%',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#EFF6FF',
-  },
-  map: {
-    flex: 1,
-  },
-  fallback: {
-    width: '100%',
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-  },
-  fallbackTitle: {
-    color: '#1E3A8A',
-    fontSize: 13,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  fallbackText: {
-    color: '#64748B',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 5,
-    lineHeight: 16,
-  },
-  fallbackCoords: {
-    color: '#059669',
-    fontSize: 11,
-    fontWeight: '900',
-    marginTop: 8,
-  },
-  pin: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  pinDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#FFFFFF',
-  },
-  helpBox: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 10,
-    backgroundColor: 'rgba(15,23,42,0.88)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  helpText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
+  wrapper: { width: '100%', borderRadius: 12, overflow: 'hidden', backgroundColor: '#EFF6FF' },
+  webview: { flex: 1, backgroundColor: '#EFF6FF' },
+  fallback: { width: '100%', borderRadius: 12, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', padding: 14 },
+  fallbackTitle: { color: '#1E3A8A', fontSize: 13, fontWeight: '900', textAlign: 'center' },
+  fallbackText: { color: '#64748B', fontSize: 11, textAlign: 'center', marginTop: 5, lineHeight: 16 },
+  fallbackCoords: { color: '#059669', fontSize: 11, fontWeight: '900', marginTop: 8 },
 });
