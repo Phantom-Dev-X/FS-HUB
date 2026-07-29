@@ -162,6 +162,7 @@ alter table public.fshub_orders add column if not exists payable_total numeric n
 alter table public.fshub_orders add column if not exists discount_amount numeric not null default 0;
 alter table public.fshub_orders add column if not exists order_items jsonb not null default '[]'::jsonb;
 alter table public.fshub_orders add column if not exists status text default 'Pending Dispatch ⏳';
+alter table public.fshub_orders add column if not exists status_updated_at timestamptz;
 alter table public.fshub_orders add column if not exists geotag_lat_lon text;
 alter table public.fshub_orders add column if not exists created_at timestamptz default now();
 

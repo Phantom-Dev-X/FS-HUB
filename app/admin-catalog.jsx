@@ -55,8 +55,23 @@ export default function AdminCatalog() {
     if (!result.canceled && result.assets?.[0]?.uri) setPhotoUri(result.assets[0].uri);
   };
 
-  const save = async () => {
+  const save = async (confirmedCustomCategory = false) => {
     if (!name.trim() || !price.trim()) return Alert.alert('Missing details', 'Name and price are required.');
+    const normalizedCategory = String(category || '').trim();
+    const knownCategories = Array.from(new Set(items.map(item => item.category).filter(Boolean)));
+    const isKnownCategory = knownCategories.includes(normalizedCategory);
+    const isCurrentEditingCategory = editing && normalizedCategory === editing.category;
+    if (!confirmedCustomCategory && normalizedCategory && !isKnownCategory && !isCurrentEditingCategory) {
+      Alert.alert(
+        'Create New Filter?',
+        `"${normalizedCategory}" does not match current inventory filters. Saving this product will create a new filter/category for reps. Continue?`,
+        [
+          { text: 'Review', style: 'cancel' },
+          { text: 'Create Filter', onPress: () => save(true) }
+        ]
+      );
+      return;
+    }
     setSaving(true);
 
     const productId = editing?.id || `PRD-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
@@ -73,7 +88,7 @@ export default function AdminCatalog() {
 
     const payload = {
       name: name.trim(),
-      category,
+      category: normalizedCategory,
       price: toNumber(price),
       stock: toNumber(stock),
       image_path: finalPhotoPath,

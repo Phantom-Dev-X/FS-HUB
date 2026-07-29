@@ -63,6 +63,15 @@ export default function ProductDetailScreen() {
   }
 
   const handleAddToCart = () => {
+    if (productStock <= 0) {
+      Alert.alert('Out of Stock', 'This product is currently unavailable and cannot be added to cart.');
+      return;
+    }
+    if (qty > productStock) {
+      Alert.alert('Stock Limit', `Only ${productStock} unit(s) are available.`);
+      setQty(productStock);
+      return;
+    }
     OrderStore.addToCart(product.id, qty);
     Alert.alert(
       '🛒 Added to Store Cart ✓',
@@ -132,7 +141,7 @@ export default function ProductDetailScreen() {
 
               <Text style={[styles.qtyNum, { color: colors.mainText }]}>{qty}</Text>
 
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => setQty(qty + 1)}>
+              <TouchableOpacity style={[styles.qtyBtn, qty >= productStock && { backgroundColor: '#94A3B8' }]} onPress={() => qty < productStock && setQty(qty + 1)}>
                 <Text style={styles.qtyBtnText}>+</Text>
               </TouchableOpacity>
             </View>
@@ -162,7 +171,7 @@ export default function ProductDetailScreen() {
 
       {/* Look right right here: FIXED BOTTOM ADD TO CART BUTTON! */}
       <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.cyan }]}>
-        <TouchableOpacity style={styles.addBtn} onPress={handleAddToCart}>
+        <TouchableOpacity style={[styles.addBtn, productStock <= 0 && { backgroundColor: '#94A3B8' }]} onPress={handleAddToCart}>
           <Text style={styles.addBtnText}>
             ➕ ADD {qty} {qty === 1 ? 'UNIT' : 'UNITS'} TO CART (₦{(qty * productPrice).toLocaleString()}) ✓
           </Text>
@@ -232,9 +241,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   heroProductImage: {
-    width: 150,
-    height: 150,
-    borderRadius: 28,
+    width: '100%',
+    height: 220,
+    borderRadius: 22,
     marginVertical: 10,
   },
   heroProdName: {

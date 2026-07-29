@@ -24,7 +24,7 @@ export default function InventoryScreen() {
   const [restockNote, setRestockNote] = useState('');
   const [isSendingRestock, setIsSendingRestock] = useState(false);
 
-  const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display & Retail'];
+  const categories = ['All Products', ...Array.from(new Set(products.map(p => p.category).filter(Boolean)))];
 
   // Load real catalog from DB every time screen becomes focused
   useFocusEffect(
@@ -356,8 +356,8 @@ const styles = StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sheetTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
   sheetClose: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  specHero: { alignItems: 'center', backgroundColor: '#EFF6FF', borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#DBEAFE', marginBottom: 12 },
-  specImage: { width: 112, height: 112, borderRadius: 22, marginBottom: 8 },
+  specHero: { alignItems: 'center', backgroundColor: '#EFF6FF', borderRadius: 18, padding: 0, borderWidth: 1, borderColor: '#DBEAFE', marginBottom: 12, overflow: 'hidden' },
+  specImage: { width: '100%', height: 220, marginBottom: 10 },
   specName: { color: '#0F172A', fontSize: 17, fontWeight: '900', marginTop: 8, textAlign: 'center' },
   specCategory: { color: '#64748B', fontSize: 12, fontWeight: '700', marginTop: 3 },
   specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

@@ -90,6 +90,39 @@ export default function CheckoutSummaryScreen() {
 
     setIsEmailSending(true);
 
+    // Live stock validation + reservation before saving order.
+    // This prevents reps from ordering more than available warehouse stock.
+    const freshCatalog = await DatabaseEngine.getCatalog();
+    for (const item of cartItems) {
+      const product = freshCatalog.find(p => p.id === item.id);
+      const available = Number(product?.stock ?? product?.warehouse_stock ?? 0);
+      const requested = Number(item.qty || 0);
+      if (!product) {
+        setIsEmailSending(false);
+        Alert.alert('Product Missing', `${item.name} is no longer available in the warehouse catalog.`);
+        return;
+      }
+      if (available <= 0 || requested > available) {
+        setIsEmailSending(false);
+        Alert.alert('Insufficient Stock', `${item.name}: requested ${requested}, available ${available}. Please adjust the cart.`);
+        return;
+      }
+    }
+
+    for (const item of cartItems) {
+      const product = freshCatalog.find(p => p.id === item.id);
+      const available = Number(product?.stock ?? product?.warehouse_stock ?? 0);
+      const nextStock = Math.max(0, available - Number(item.qty || 0));
+      const stockRes = await DatabaseEngine.updateProductStock(item.id, nextStock);
+      if (!stockRes.success) {
+        setIsEmailSending(false);
+        Alert.alert('Stock Reservation Failed', stockRes.error || `Could not reserve stock for ${item.name}.`);
+        return;
+      }
+    }
+    const updatedCatalog = await DatabaseEngine.getCatalog();
+    OrderStore.catalog = updatedCatalog;
+
     const clientEmail = client.email || client.registered_email || '';
     const repEmail = OrderStore.currentAgent?.email || '';
 

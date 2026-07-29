@@ -63,7 +63,7 @@ export default function VisitOrdersScreen() {
     amber:      isDark ? '#F59E0B' : '#D97706',
   };
 
-  const categories = ['All Products', '⚡ Solar & Power', '🌐 Networking', '🏪 Display'];
+  const categories = ['All Products', ...Array.from(new Set(catalogItems.map(p => p.category).filter(Boolean)))];
 
   const filteredCatalog = catalogItems.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode?.includes(searchQuery);
@@ -125,7 +125,11 @@ export default function VisitOrdersScreen() {
         OrderStore.currentClient.gpsVerified = `Lat: ${current.coords.latitude.toFixed(6)} | Lon: ${current.coords.longitude.toFixed(6)} | ±${Math.round(current.coords.accuracy || 0)}m`;
         Alert.alert('Check-in backed up ✅', 'The photo, GPS position, accuracy, representative, client, and timestamp are stored in Supabase.');
       } catch (e) {
-        Alert.alert('Check-in backup failed', `${e.message}\n\nThe photo is still visible on this phone, but it is not marked as cloud verified.`);
+        // A captured photo still unlocks the order flow, even if cloud backup fails.
+        // The Sync/audit problem is shown, but reps are not trapped after taking a real photo.
+        OrderStore.currentClient.checkInPhotoTaken = true;
+        OrderStore.currentClient.checkInPhotoUri = capturedUri;
+        Alert.alert('Photo Saved Locally', `${e.message}\n\nThe photo is on this phone and unlocks ordering, but it was not cloud verified. Retry when network/database is stable.`);
       } finally {
         setIsUploadingPhoto(false);
       }
@@ -135,7 +139,7 @@ export default function VisitOrdersScreen() {
   };
 
   const requireVerifiedPhoto = () => {
-    if (!OrderStore.currentClient?.checkInPhotoTaken) {
+    if (!photoUri && !OrderStore.currentClient?.checkInPhotoTaken && !OrderStore.currentClient?.checkInPhotoUri && !OrderStore.currentClient?.checkInPhotoPath) {
       Alert.alert('Geotag Photo Required', 'Take and upload the store entrance photo first. You cannot select products or checkout until the check-in photo is verified.');
       return false;
     }

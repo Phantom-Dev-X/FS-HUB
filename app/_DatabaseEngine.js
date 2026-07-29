@@ -1106,6 +1106,25 @@ export const DatabaseEngine = {
     } catch { return []; }
   },
 
+  updateOrderStatus: async function(invoiceNumber, status) {
+    try {
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.ordersTable}?invoice_number=eq.${encodeURIComponent(invoiceNumber)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ status, status_updated_at: new Date().toISOString() })
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Supabase ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // SESSION - SecureStore
   saveSession: async function(repObj) {
     try { await SecureStore.setItemAsync(this.KEYS.SESSION, JSON.stringify(repObj)); return { success: true }; }
