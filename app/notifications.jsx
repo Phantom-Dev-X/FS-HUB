@@ -15,8 +15,21 @@ const parsePayload = (payload) => {
   try { return JSON.parse(payload); } catch { return {}; }
 };
 
-const threadIdOfMessage = (msg) => String(msg.related_id || msg.relatedId || msg.id);
-const threadIdOfReply = (reply) => String(reply.related_id || reply.relatedId || reply.id);
+const getCategory = (msg) => {
+  const payload = parsePayload(msg.payload);
+  if (payload.category) return payload.category;
+  const type = String(msg.type || '').toLowerCase();
+  const text = `${msg.title || ''} ${msg.body || ''}`.toLowerCase();
+  if (type.includes('restock') || text.includes('restock') || text.includes('stock')) return 'restock';
+  if (type.includes('complaint') || type.includes('support') || text.includes('complaint') || text.includes('issue') || text.includes('problem') || text.includes('customer')) return 'support';
+  return 'custom';
+};
+
+const categoryMeta = {
+  restock: { title: 'Restock Requests', emoji: '📦' },
+  support: { title: 'Complaints & Support', emoji: '🛟' },
+  custom: { title: 'Custom Messages', emoji: '💬' },
+};
 
 export default function NotificationsScreen() {
   const [replies, setReplies] = useState([]);
@@ -67,20 +80,23 @@ export default function NotificationsScreen() {
 
   const threads = useMemo(() => {
     const map = new Map();
+    const messageById = new Map(sentMessages.map(msg => [String(msg.id), msg]));
 
     sentMessages.forEach(msg => {
-      const threadId = threadIdOfMessage(msg);
-      const current = map.get(threadId) || { threadId, sent: [], replies: [] };
+      const category = getCategory(msg);
+      const current = map.get(category) || { threadId: category, category, sent: [], replies: [] };
       current.sent.push(msg);
-      current.original = current.original || sentMessages.find(m => String(m.id) === threadId) || msg;
-      map.set(threadId, current);
+      current.original = current.original || msg;
+      map.set(category, current);
     });
 
     replies.forEach(reply => {
-      const threadId = threadIdOfReply(reply);
-      const current = map.get(threadId) || { threadId, sent: [], replies: [] };
+      const payload = parsePayload(reply.payload);
+      const relatedMessage = messageById.get(String(reply.related_id || reply.relatedId));
+      const category = payload.category || (relatedMessage ? getCategory(relatedMessage) : getCategory(reply));
+      const current = map.get(category) || { threadId: category, category, sent: [], replies: [] };
       current.replies.push(reply);
-      map.set(threadId, current);
+      map.set(category, current);
     });
 
     return Array.from(map.values()).map(thread => {
@@ -90,7 +106,7 @@ export default function NotificationsScreen() {
       ].sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
       const latest = events[events.length - 1] || thread.original;
       const unread = thread.replies.some(reply => !reply.read);
-      return { ...thread, events, latest, unread, title: thread.original?.title || latest?.title || 'Message Thread' };
+      return { ...thread, events, latest, unread, title: `${categoryMeta[thread.category]?.emoji || '💬'} ${categoryMeta[thread.category]?.title || 'Messages'}` };
     }).sort((a, b) => new Date(b.latest?.time || b.latest?.created_at || 0) - new Date(a.latest?.time || a.latest?.created_at || 0));
   }, [sentMessages, replies]);
 
@@ -100,7 +116,11 @@ export default function NotificationsScreen() {
     const unreadReplies = thread.replies.filter(reply => !reply.read);
     if (unreadReplies.length) {
       await Promise.all(unreadReplies.map(reply => DatabaseEngine.markRepNotificationRead(reply.id)));
-      setReplies(prev => prev.map(reply => thread.threadId === threadIdOfReply(reply) ? { ...reply, read: true } : reply));
+      setReplies(prev => prev.map(reply => {
+        const payload = parsePayload(reply.payload);
+        const category = payload.category || getCategory(reply);
+        return category === thread.category ? { ...reply, read: true } : reply;
+      }));
     }
     setSelectedThread(thread);
     setReplyBody('');
@@ -113,12 +133,12 @@ export default function NotificationsScreen() {
     const res = await DatabaseEngine.saveAdminMessage({
       repId,
       repName,
-      type: 'rep_followup',
+      type: `rep_followup_${selectedThread.category || selectedThread.threadId}`,
       title: `Re: ${original.title || selectedThread.title}`,
       body: replyBody.trim(),
       priority: original.priority || 'Normal',
-      relatedId: selectedThread.threadId,
-      payload: { source: 'rep_notification_thread_reply' }
+      relatedId: original.id || selectedThread.threadId,
+      payload: { source: 'rep_notification_thread_reply', category: selectedThread.category || selectedThread.threadId }
     });
     setSendingReply(false);
     if (!res.success) return Alert.alert('Reply Failed', res.error || 'Could not send reply.');
@@ -250,7 +270,7 @@ const styles = StyleSheet.create({
   quoteText: { color: '#0F172A', fontSize: 11, fontWeight: '800', marginTop: 2 },
   threadBody: { color: '#334155', fontSize: 12, lineHeight: 18 },
   threadMeta: { color: '#64748B', fontSize: 9, marginTop: 6 },
-  replyInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 12, minHeight: 70, marginTop: 8 },
+  replyInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 12, minHeight: 70, marginTop: 8, color: '#0F172A' },
   sheetActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   sendBtn: { flex: 1, backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   sendText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12 },
