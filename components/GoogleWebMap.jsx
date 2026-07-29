@@ -17,6 +17,13 @@ if (!IS_EXPO_GO && Platform.OS !== 'web') {
   }
 }
 
+const hasNativeMapComponents = () => Boolean(
+  MapLibreGL &&
+  MapLibreGL.MapView &&
+  MapLibreGL.Camera &&
+  MapLibreGL.PointAnnotation
+);
+
 const toNumber = (value) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -77,7 +84,7 @@ export default function GoogleWebMap({
     if (onLocationSelected) onLocationSelected(coordinate);
   };
 
-  if (Platform.OS === 'web' || !MapLibreGL) {
+  if (Platform.OS === 'web' || !hasNativeMapComponents()) {
     return (
       <View style={[styles.fallback, { height }]}>
         <Text style={styles.fallbackTitle}>{IS_EXPO_GO ? 'Native MapLibre map needs APK/dev build' : 'Native map unavailable'}</Text>
@@ -91,9 +98,13 @@ export default function GoogleWebMap({
     );
   }
 
+  const NativeMapView = MapLibreGL.MapView;
+  const NativeCamera = MapLibreGL.Camera;
+  const NativePointAnnotation = MapLibreGL.PointAnnotation;
+
   return (
     <View style={[styles.wrapper, { height }]}>
-      <MapLibreGL.MapView
+      <NativeMapView
         style={styles.map}
         styleURL={MAP_STYLE_URL}
         logoEnabled={false}
@@ -104,7 +115,7 @@ export default function GoogleWebMap({
           handleSelectCoordinate(readMapPressCoordinate(event));
         }}
       >
-        <MapLibreGL.Camera
+        <NativeCamera
           centerCoordinate={toMapLibreCoordinate(selectedCoordinate)}
           zoomLevel={Number(zoom) || 14}
           animationMode="flyTo"
@@ -112,7 +123,7 @@ export default function GoogleWebMap({
         />
 
         {safeMarkers.map(marker => (
-          <MapLibreGL.PointAnnotation
+          <NativePointAnnotation
             key={marker.id}
             id={marker.id}
             coordinate={[marker.longitude, marker.latitude]}
@@ -121,11 +132,10 @@ export default function GoogleWebMap({
             <View style={[styles.pin, { backgroundColor: marker.color }]}>
               <View style={styles.pinDot} />
             </View>
-            <MapLibreGL.Callout title={marker.description ? `${marker.title}\n${marker.description}` : marker.title} />
-          </MapLibreGL.PointAnnotation>
+          </NativePointAnnotation>
         ))}
 
-        <MapLibreGL.PointAnnotation
+        <NativePointAnnotation
           id="fshub-center-pin"
           coordinate={toMapLibreCoordinate(selectedCoordinate)}
           title={label}
@@ -135,9 +145,8 @@ export default function GoogleWebMap({
           <View style={[styles.pin, { backgroundColor: '#2563EB' }]}>
             <View style={styles.pinDot} />
           </View>
-          <MapLibreGL.Callout title={draggablePicker ? 'Drag or tap map to select this location' : label} />
-        </MapLibreGL.PointAnnotation>
-      </MapLibreGL.MapView>
+        </NativePointAnnotation>
+      </NativeMapView>
 
       {draggablePicker && (
         <View style={styles.helpBox} pointerEvents="none">
