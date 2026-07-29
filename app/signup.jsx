@@ -18,6 +18,7 @@ export default function SignupScreen() {
   // subsequent signup to collide with the first account's primary key.
   const [repId, setRepId] = useState('');
   const [territory, setTerritory] = useState('Ikeja Commercial Zone');
+  const [phone, setPhone] = useState('');
   const [gmail, setGmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -49,8 +50,8 @@ export default function SignupScreen() {
   };
 
   const handleCompleteSignup = async () => {
-    if (!fullName.trim() || !repId.trim() || !territory.trim() || !gmail.trim() || !password) {
-      Alert.alert('Incomplete Form ⚠️', 'Please fill all fields.');
+    if (!fullName.trim() || !repId.trim() || !territory.trim() || !phone.trim() || !gmail.trim() || !password) {
+      Alert.alert('Incomplete Form ⚠️', 'Please fill all fields including phone number.');
       return;
     }
 
@@ -90,6 +91,7 @@ export default function SignupScreen() {
         rep_id: normalizedRepId,
         full_name: fullName.trim(),
         territory: territory.trim(),
+        phone: phone.trim(),
       }
     });
 
@@ -106,6 +108,7 @@ export default function SignupScreen() {
       zone: `${territory.trim()} • Route #${Math.floor(10 + Math.random()*80)}`,
       territory: territory.trim(),
       email: normalizedEmail,
+      phone: phone.trim(),
       auth_user_id: authRes.user?.id,
       status: '🟢 Active in Field • Online Today',
       coordinate: { latitude: repCoords.latitude + (Math.random()*0.01 - 0.005), longitude: repCoords.longitude + (Math.random()*0.01 - 0.005) },
@@ -178,6 +181,9 @@ export default function SignupScreen() {
 
             <Text style={[styles.label, { color: colors.subText }]}>TERRITORY *</Text>
             <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="Ikeja Commercial Zone" value={territory} onChangeText={setTerritory} />
+
+            <Text style={[styles.label, { color: colors.subText }]}>PHONE NUMBER *</Text>
+            <TextInput style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.mainText }]} placeholder="08012345678" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
 
             <Text style={[styles.label, { color: colors.green }]}>OFFICER GMAIL * (regex validated)</Text>
             <View style={[styles.input, { backgroundColor: colors.background, borderColor: gmail && validateEmail(gmail) ? '#EF4444' : colors.green, flexDirection: 'row', alignItems: 'center', paddingVertical: 0 }]}>

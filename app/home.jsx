@@ -31,6 +31,7 @@ export default function DashboardScreen() {
   const [myClientsCount, setMyClientsCount] = useState(null);
   const [offlineCount, setOfflineCount] = useState(null);
   const [myOrdersCount, setMyOrdersCount] = useState(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [agent, setAgent] = useState(OrderStore.currentAgent);
   const [loading, setLoading] = useState(true);
 
@@ -93,6 +94,7 @@ export default function DashboardScreen() {
               setMyClientsCount(cachedHome.clients ?? null);
               setMyOrdersCount(cachedHome.orders ?? null);
               setOfflineCount(cachedHome.offline ?? null);
+              setUnreadNotifications(cachedHome.unread ?? 0);
               lastValues.current = {
                 clients: cachedHome.clients ?? null,
                 orders: cachedHome.orders ?? null,
@@ -121,9 +123,11 @@ export default function DashboardScreen() {
             const myOrders = await DatabaseEngine.getOrdersByRep(session.id);
             const orderCount = myOrders.length;
 
-            // Offline orders count
+            // Offline orders + unread admin replies count
             const offline = await DatabaseEngine.getOfflineOrders();
             const offlineCountVal = offline.length;
+            const repNotifications = await DatabaseEngine.getRepNotifications(session.id);
+            const unreadCountVal = (repNotifications || []).filter(n => !n.read).length;
 
             if (active) {
               // Only update if different from last known good value (prevents 0 flash)
@@ -142,11 +146,13 @@ export default function DashboardScreen() {
                 setOfflineCount(offlineCountVal);
                 lastValues.current.offline = offlineCountVal;
               }
+              setUnreadNotifications(unreadCountVal);
 
               await CacheEngine.set('home_stats', session.id || session.email || 'guest', {
                 clients: clientCount,
                 orders: orderCount,
                 offline: offlineCountVal,
+                unread: unreadCountVal,
                 savedAt: new Date().toISOString(),
               });
             }
@@ -206,7 +212,8 @@ export default function DashboardScreen() {
               <Text style={styles.agentRole} numberOfLines={1}>{agent?.id ? `${agent.id} • ${agent.territory}` : 'No session - Please login'}</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.gearBtn}>
-              <Ionicons name="notifications-outline" size={20} color="#2563EB" />
+              <Ionicons name={unreadNotifications > 0 ? "notifications" : "notifications-outline"} size={20} color="#2563EB" />
+              {unreadNotifications > 0 && <View style={styles.notificationDot}><Text style={styles.notificationDotText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text></View>}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/profile')} style={[styles.gearBtn, { marginLeft: 8 }]}>
               <Ionicons name="settings-outline" size={20} color="#64748B" />
@@ -364,7 +371,9 @@ const styles = StyleSheet.create({
   agentInfo: { flex: 1 },
   agentName: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
   agentRole: { fontSize: 11, color: '#334155', marginTop: 1 },
-  gearBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  gearBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', position: 'relative' },
+  notificationDot: { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF', paddingHorizontal: 3 },
+  notificationDotText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
   dashboardTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', letterSpacing: 0.3 },
   dashboardSub: { fontSize: 11, color: '#64748B', marginTop: 2, marginBottom: 14, lineHeight: 16 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10, marginBottom: 16 },

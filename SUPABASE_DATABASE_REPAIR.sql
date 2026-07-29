@@ -29,6 +29,7 @@ alter table public.fshub_reps add column if not exists password text;
 alter table public.fshub_reps add column if not exists full_name text;
 alter table public.fshub_reps add column if not exists email_verified boolean default false;
 alter table public.fshub_reps add column if not exists sales_volume text;
+alter table public.fshub_reps add column if not exists phone text;
 alter table public.fshub_reps add column if not exists auth_user_id uuid;
 
 -- Clients

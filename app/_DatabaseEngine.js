@@ -57,6 +57,7 @@ export const DatabaseEngine = {
         id: repObject.id,
         name: repObject.name || repObject.fullName,
         email: repObject.email?.toLowerCase(),
+        phone: repObject.phone || '',
         zone: repObject.zone || repObject.territory,
         territory: repObject.territory || repObject.zone,
         status: repObject.status || 'Active',
@@ -80,6 +81,7 @@ export const DatabaseEngine = {
           id: repObject.id,
           name: repObject.name || repObject.fullName,
           email: repObject.email?.toLowerCase(),
+          phone: repObject.phone || '',
           zone: repObject.zone || repObject.territory,
           territory: repObject.territory || repObject.zone,
           status: repObject.status || 'Active',
@@ -514,6 +516,35 @@ export const DatabaseEngine = {
       const rawClients = await response.json();
       return this._normalizeClients(rawClients);
     } catch { return []; }
+  },
+
+  updateClient: async function(clientId, updates) {
+    try {
+      const payload = {};
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.address !== undefined) payload.address = updates.address;
+      if (updates.latitude !== undefined) payload.latitude = Number(updates.latitude);
+      if (updates.longitude !== undefined) payload.longitude = Number(updates.longitude);
+      if (updates.location_accuracy_m !== undefined) payload.location_accuracy_m = updates.location_accuracy_m;
+      if (updates.location_method !== undefined) payload.location_method = updates.location_method;
+      if (updates.location_captured_at !== undefined) payload.location_captured_at = updates.location_captured_at;
+      if (updates.gps_coordinates !== undefined) payload.gps_coordinates = updates.gps_coordinates;
+
+      const response = await fetch(`${this.supabaseConfig.projectUrl}${this.supabaseConfig.clientsTable}?id=eq.${encodeURIComponent(clientId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': this.supabaseConfig.anonKey,
+          'Authorization': `Bearer ${this.supabaseConfig.anonKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+      });
+      const text = await response.text();
+      return response.ok ? { success: true } : { success: false, error: `Client update failed ${response.status}: ${text}` };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   },
 
   saveAdminMessage: async function(messageObject) {

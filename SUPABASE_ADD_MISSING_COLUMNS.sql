@@ -5,6 +5,7 @@
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS password TEXT;
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS full_name TEXT;
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE fshub_reps ADD COLUMN IF NOT EXISTS auth_user_id UUID;
 
 -- 2. fshub_clients missing rep_id columns for big company filtering (reps see only own)
