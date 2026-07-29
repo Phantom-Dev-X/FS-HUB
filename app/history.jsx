@@ -1,6 +1,6 @@
 // HISTORY - ZERO FAKE, WHITE PREMIUM, FIXED TEXT ERROR
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { CacheEngine } from './_CacheEngine';
 
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -94,6 +95,12 @@ export default function HistoryScreen() {
         try {
           const session = await DatabaseEngine.getSession();
           const repId = session?.id;
+          const cacheScope = repId || session?.email || 'guest';
+          const cachedLogs = await CacheEngine.get('history_logs', cacheScope, null);
+          if (active && cachedLogs) {
+            setHistoryLogs(cachedLogs);
+            setLoading(false);
+          }
 
           // Fetch only own orders from Supabase (big company - reps see only own)
           let orders = [];
@@ -132,6 +139,7 @@ export default function HistoryScreen() {
           }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
           if (active) setHistoryLogs(logs);
+          await CacheEngine.set('history_logs', cacheScope, logs);
         } catch (e) {
           console.log('History load error', e.message);
           if (active) Alert.alert('History Error', `Could not load orders: ${e.message}`);

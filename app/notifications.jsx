@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { CacheEngine } from './_CacheEngine';
 import { OrderStore } from './_OrderStore';
 
 const parsePayload = (payload) => {
@@ -40,13 +41,25 @@ export default function NotificationsScreen() {
       return;
     }
 
+    const cached = await CacheEngine.get('notifications_inbox', id, null);
+    if (cached) {
+      setReplies(Array.isArray(cached.replies) ? cached.replies : []);
+      setSentMessages(Array.isArray(cached.sentMessages) ? cached.sentMessages : []);
+      setLoading(false);
+    }
+
     const [repReplies, repMessages] = await Promise.all([
       DatabaseEngine.getRepNotifications(id),
       DatabaseEngine.getAdminMessagesByRep(id),
     ]);
 
-    setReplies(Array.isArray(repReplies) ? repReplies : []);
-    setSentMessages(Array.isArray(repMessages) ? repMessages : []);
+    const fresh = {
+      replies: Array.isArray(repReplies) ? repReplies : [],
+      sentMessages: Array.isArray(repMessages) ? repMessages : []
+    };
+    setReplies(fresh.replies);
+    setSentMessages(fresh.sentMessages);
+    await CacheEngine.set('notifications_inbox', id, fresh);
     setLoading(false);
   }, []);
 

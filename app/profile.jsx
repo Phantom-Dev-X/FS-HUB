@@ -21,6 +21,7 @@ import SmartFooter from './SmartFooter';
 import { OrderStore } from './_OrderStore';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { EmailService } from './_EmailService';
+import { CacheEngine } from './_CacheEngine';
 import RemoteImage from '../components/RemoteImage';
 import { useTheme } from '../context/ThemeContext';
 
@@ -42,7 +43,7 @@ export default function ProfileScreen() {
   const [agent, setAgent] = useState(OrderStore.currentAgent);
   const [avatarUri, setAvatarUri] = useState(OrderStore.currentAgent?.avatar || null);
   const [modal, setModal] = useState(null);
-  const [stats, setStats] = useState({ clients: 0, orders: 0, offline: 0 });
+  const [stats, setStats] = useState({ clients: null, orders: null, offline: null });
   const [syncing, setSyncing] = useState(false);
   const [failedEmails, setFailedEmails] = useState([]);
   const [retryingEmailId, setRetryingEmailId] = useState(null);
@@ -74,6 +75,10 @@ export default function ProfileScreen() {
     }
 
     const repId = current?.id || OrderStore.currentAgent?.id;
+    const cacheScope = repId || current?.email || 'guest';
+    const cachedStats = await CacheEngine.get('profile_stats', cacheScope, null);
+    if (cachedStats) setStats(cachedStats);
+
     const [clients, orders, offline, emails, prefRaw] = await Promise.all([
       repId && repId !== 'REP-GUEST' ? DatabaseEngine.getClientsByRep(repId) : Promise.resolve([]),
       repId && repId !== 'REP-GUEST' ? DatabaseEngine.getOrdersByRep(repId) : Promise.resolve([]),
@@ -82,7 +87,9 @@ export default function ProfileScreen() {
       AsyncStorage.getItem(PREF_KEY),
     ]);
 
-    setStats({ clients: clients.length || 0, orders: orders.length || 0, offline: offline.length || 0 });
+    const freshStats = { clients: clients.length || 0, orders: orders.length || 0, offline: offline.length || 0 };
+    setStats(freshStats);
+    await CacheEngine.set('profile_stats', cacheScope, freshStats);
     setFailedEmails(emails);
     if (prefRaw) {
       try { setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(prefRaw) }); } catch {}
@@ -332,7 +339,7 @@ const getModalTitle = (modal) => ({
 })[modal] || '';
 
 function Stat({ num, label }) {
-  return <View style={styles.statBox}><Text style={styles.statNum}>{num}</Text><Text style={styles.statLabel}>{label}</Text></View>;
+  return <View style={styles.statBox}><Text style={styles.statNum}>{num ?? '—'}</Text><Text style={styles.statLabel}>{label}</Text></View>;
 }
 
 function QuickAction({ icon, title, onPress }) {

@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import SmartFooter from './SmartFooter';
 import { useTheme } from '../context/ThemeContext';
 import { DatabaseEngine } from './_DatabaseEngine';
+import { CacheEngine } from './_CacheEngine';
 import { OrderStore } from './_OrderStore';
 import * as ImagePicker from 'expo-image-picker';
 import RemoteImage from '../components/RemoteImage';
@@ -31,10 +32,17 @@ export default function InventoryScreen() {
     useCallback(() => {
       let active = true;
       const fetchCatalog = async () => {
+        const cachedCatalog = await CacheEngine.get('catalog', 'global', null);
+        if (active && cachedCatalog) {
+          OrderStore.catalog = cachedCatalog;
+          setProducts(cachedCatalog);
+        }
+
         const cloudCatalog = await DatabaseEngine.getCatalog();
         if (active) {
           OrderStore.catalog = cloudCatalog;
           setProducts(cloudCatalog);
+          await CacheEngine.set('catalog', 'global', cloudCatalog);
         }
       };
       fetchCatalog();
