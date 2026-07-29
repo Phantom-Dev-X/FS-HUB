@@ -8,6 +8,12 @@ import SmartFooter from './SmartFooter';
 import { DatabaseEngine } from './_DatabaseEngine';
 import { OrderStore } from './_OrderStore';
 
+const parsePayload = (payload) => {
+  if (!payload) return {};
+  if (typeof payload === 'object') return payload;
+  try { return JSON.parse(payload); } catch { return {}; }
+};
+
 const threadIdOfMessage = (msg) => String(msg.related_id || msg.relatedId || msg.id);
 const threadIdOfReply = (reply) => String(reply.related_id || reply.relatedId || reply.id);
 
@@ -157,13 +163,22 @@ export default function NotificationsScreen() {
             </View>
 
             <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-              {selectedThread?.events.map((event, index) => (
-                <View key={`${event.kind}-${event.id || index}`} style={event.kind === 'sent' ? styles.bubbleSent : styles.bubbleReply}>
-                  <Text style={styles.threadLabel}>{event.kind === 'sent' ? 'You' : 'Admin'}</Text>
-                  <Text style={styles.threadBody}>{event.body}</Text>
-                  <Text style={styles.threadMeta}>{event.time ? new Date(event.time).toLocaleString() : ''}</Text>
-                </View>
-              ))}
+              {selectedThread?.events.map((event, index) => {
+                const payload = parsePayload(event.payload);
+                return (
+                  <View key={`${event.kind}-${event.id || index}`} style={event.kind === 'sent' ? styles.bubbleSent : styles.bubbleReply}>
+                    <Text style={styles.threadLabel}>{event.kind === 'sent' ? 'You' : 'Admin'}</Text>
+                    {event.kind === 'reply' && payload.quotedMessageText ? (
+                      <View style={styles.quoteBox}>
+                        <Text style={styles.quoteLabel}>Replying to</Text>
+                        <Text style={styles.quoteText} numberOfLines={2}>{payload.quotedMessageText}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={styles.threadBody}>{event.body}</Text>
+                    <Text style={styles.threadMeta}>{event.time ? new Date(event.time).toLocaleString() : ''}</Text>
+                  </View>
+                );
+              })}
             </ScrollView>
 
             <TextInput
@@ -217,6 +232,9 @@ const styles = StyleSheet.create({
   bubbleSent: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 16, padding: 12, marginBottom: 10 },
   bubbleReply: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16, padding: 12, marginBottom: 10 },
   threadLabel: { color: '#64748B', fontSize: 10, fontWeight: '900', marginBottom: 4 },
+  quoteBox: { borderLeftWidth: 3, borderLeftColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.08)', borderRadius: 8, padding: 8, marginBottom: 7 },
+  quoteLabel: { color: '#64748B', fontSize: 9, fontWeight: '900' },
+  quoteText: { color: '#0F172A', fontSize: 11, fontWeight: '800', marginTop: 2 },
   threadBody: { color: '#334155', fontSize: 12, lineHeight: 18 },
   threadMeta: { color: '#64748B', fontSize: 9, marginTop: 6 },
   replyInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, padding: 12, minHeight: 70, marginTop: 8 },

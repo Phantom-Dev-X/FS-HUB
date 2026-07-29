@@ -116,6 +116,7 @@ alter table public.fshub_rep_notifications add column if not exists title text;
 alter table public.fshub_rep_notifications add column if not exists body text;
 alter table public.fshub_rep_notifications add column if not exists type text default 'admin_reply';
 alter table public.fshub_rep_notifications add column if not exists related_id text;
+alter table public.fshub_rep_notifications add column if not exists payload jsonb default '{}'::jsonb;
 alter table public.fshub_rep_notifications add column if not exists read boolean default false;
 alter table public.fshub_rep_notifications add column if not exists created_at timestamptz default now();
 

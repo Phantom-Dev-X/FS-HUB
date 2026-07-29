@@ -696,6 +696,7 @@ export const DatabaseEngine = {
       body: notification.body || notification.message || '',
       type: notification.type || 'admin_reply',
       related_id: notification.related_id || notification.relatedId || '',
+      payload: notification.payload || {},
       read: false,
       created_at: notification.created_at || new Date().toISOString(),
     };
